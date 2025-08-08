@@ -8,14 +8,21 @@ module RubyRag
     end
     
     def embed_text(text)
-      return nil if text.nil? || text.strip.empty?
+      return nil if text.nil? || text.empty? || (text.respond_to?(:strip) && text.strip.empty?)
       
-      # Use RedCandle to generate embeddings
-      embedding = @model.embed(text)
+      # Use Candle to generate embeddings
+      # The embedding method returns a tensor, we need to convert to array
+      embedding = @model.embedding(text)
       
-      # Convert to array if needed
+      # Convert tensor to array - Candle tensors need double to_a
+      # First to_a gives [tensor], second to_a on the tensor gives the float array
       if embedding.respond_to?(:to_a)
-        embedding.to_a
+        result = embedding.to_a
+        if result.is_a?(Array) && result.first.respond_to?(:to_a)
+          result.first.to_a
+        else
+          result
+        end
       else
         embedding
       end
@@ -60,22 +67,39 @@ module RubyRag
     private
     
     def load_model(model_name)
-      # Initialize RedCandle embedding model
-      # RedCandle handles model downloading and caching automatically
+      # Initialize Candle embedding model
+      # Map common model names to Candle-compatible paths and types
+      model_configs = {
+        "BAAI/bge-small-en-v1.5" => {
+          model_path: "BAAI/bge-small-en-v1.5",
+          model_type: "bert"
+        },
+        "bge-small-en-v1.5" => {
+          model_path: "BAAI/bge-small-en-v1.5", 
+          model_type: "bert"
+        },
+        "jinaai/jina-embeddings-v2-base-en" => {
+          model_path: "jinaai/jina-embeddings-v2-base-en",
+          model_type: "jina_bert"
+        }
+      }
+      
+      config = model_configs[model_name] || {
+        model_path: Candle::EmbeddingModel::DEFAULT_MODEL_PATH,
+        model_type: Candle::EmbeddingModel::DEFAULT_EMBEDDING_MODEL_TYPE
+      }
+      
       begin
-        RedCandle::Embedding.new(model_name)
+        Candle::EmbeddingModel.new(
+          model_path: config[:model_path],
+          model_type: config[:model_type]
+        )
       rescue => e
         puts "Warning: Could not load model #{model_name}, falling back to default"
         puts "Error: #{e.message}"
         
-        # Try with a simpler model name format
-        if model_name.include?("/")
-          simple_name = model_name.split("/").last
-          RedCandle::Embedding.new(simple_name)
-        else
-          # Last resort: use a known working model
-          RedCandle::Embedding.new("bge-small-en-v1.5")
-        end
+        # Fall back to default Jina model
+        Candle::EmbeddingModel.new
       end
     end
     

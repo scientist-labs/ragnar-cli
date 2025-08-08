@@ -18,18 +18,29 @@ module RubyRag
           chunk_text: doc[:chunk_text],
           file_path: doc[:file_path],
           chunk_index: doc[:chunk_index],
-          embedding: doc[:embedding].to_a,
+          embedding: doc[:embedding],
           metadata: doc[:metadata].to_json
         }
       end
       
+      # Define schema for the table with vector type
+      embedding_size = documents.first[:embedding].size
+      schema = {
+        id: :string,
+        chunk_text: :string,
+        file_path: :string,
+        chunk_index: :int64,
+        embedding: { type: "vector", dimension: embedding_size },
+        metadata: :string
+      }
+      
       # Create or append to Lance table
-      if table_exists?
+      if dataset_exists?
         dataset = Lancelot::Dataset.open(@db_path)
-        table = dataset.open_table(@table_name)
-        table.add(data)
+        dataset.add_documents(data)
       else
-        Lancelot::Dataset.create(@db_path, @table_name, data)
+        dataset = Lancelot::Dataset.create(@db_path, schema: schema)
+        dataset.add_documents(data)
       end
     end
     
@@ -94,7 +105,7 @@ module RubyRag
     end
     
     def get_stats
-      unless table_exists?
+      unless dataset_exists?
         return {
           total_documents: 0,
           unique_files: 0,
@@ -105,14 +116,14 @@ module RubyRag
       end
       
       dataset = Lancelot::Dataset.open(@db_path)
-      table = dataset.open_table(@table_name)
       
-      all_docs = table.search.execute
+      # Get all documents
+      all_docs = dataset.to_a
       
       stats = {
         total_documents: all_docs.size,
         total_chunks: all_docs.size,
-        unique_files: all_docs.map { |d| d["file_path"] }.uniq.size,
+        unique_files: all_docs.map { |d| d[:file_path] }.uniq.size,
         with_embeddings: 0,
         with_reduced_embeddings: 0,
         avg_chunk_size: 0,
@@ -123,20 +134,20 @@ module RubyRag
       chunk_sizes = []
       
       all_docs.each do |doc|
-        if doc["embedding"] && !doc["embedding"].empty?
+        if doc[:embedding] && !doc[:embedding].empty?
           stats[:with_embeddings] += 1
-          stats[:embedding_dims] ||= doc["embedding"].size
+          stats[:embedding_dims] ||= doc[:embedding].size
         end
         
-        if doc["reduced_embedding"] && !doc["reduced_embedding"].empty?
+        if doc[:reduced_embedding] && !doc[:reduced_embedding].empty?
           stats[:with_reduced_embeddings] += 1
-          stats[:reduced_dims] ||= doc["reduced_embedding"].size
+          stats[:reduced_dims] ||= doc[:reduced_embedding].size
         end
         
-        chunk_sizes << doc["chunk_text"].size if doc["chunk_text"]
+        chunk_sizes << doc[:chunk_text].size if doc[:chunk_text]
       end
       
-      stats[:avg_chunk_size] = chunk_sizes.sum / chunk_sizes.size if chunk_sizes.any?
+      stats[:avg_chunk_size] = (chunk_sizes.sum.to_f / chunk_sizes.size).round if chunk_sizes.any?
       
       stats
     end
@@ -167,18 +178,22 @@ module RubyRag
     private
     
     def ensure_database_exists
-      FileUtils.mkdir_p(@db_path) unless File.exist?(@db_path)
+      # Don't create directory - Lance will handle this
     end
     
-    def table_exists?
+    def dataset_exists?
       return false unless File.exist?(@db_path)
       
       begin
-        dataset = Lancelot::Dataset.open(@db_path)
-        dataset.table_names.include?(@table_name)
+        Lancelot::Dataset.open(@db_path)
+        true
       rescue
         false
       end
+    end
+    
+    def table_exists?
+      dataset_exists?
     end
   end
 end

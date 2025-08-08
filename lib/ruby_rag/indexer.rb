@@ -80,8 +80,14 @@ module RubyRag
       puts "  Created #{chunks.size} chunks"
       
       # Process chunks and create documents
-      chunk_count = process_chunks(chunks, file_path)
-      stats[:chunks_created] += chunk_count
+      begin
+        chunk_count = process_chunks(chunks, file_path)
+        stats[:chunks_created] += chunk_count
+      rescue => e
+        puts "  Error in process_chunks: #{e.message}"
+        puts "  Backtrace: #{e.backtrace.first(3).join("\n    ")}"
+        raise e
+      end
     end
     
     def process_chunks(chunks, file_path)

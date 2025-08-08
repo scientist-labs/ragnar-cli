@@ -14,7 +14,7 @@ module RubyRag
   DEFAULT_DB_PATH = "rag_database"
   DEFAULT_CHUNK_SIZE = 512
   DEFAULT_CHUNK_OVERLAP = 50
-  DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+  DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-en"
 end
 
 require_relative "ruby_rag/version"

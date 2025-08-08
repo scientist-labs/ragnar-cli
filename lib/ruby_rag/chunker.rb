@@ -5,12 +5,11 @@ module RubyRag
     def initialize(chunk_size: RubyRag::DEFAULT_CHUNK_SIZE, chunk_overlap: RubyRag::DEFAULT_CHUNK_OVERLAP)
       @chunk_size = chunk_size
       @chunk_overlap = chunk_overlap
-      @splitter = Baran::CharacterTextSplitter.new(
+      # Use RecursiveCharacterTextSplitter for better chunking
+      @splitter = Baran::RecursiveCharacterTextSplitter.new(
         chunk_size: chunk_size,
         chunk_overlap: chunk_overlap,
-        separator: "\n\n",
-        secondary_separator: "\n",
-        keep_separator: false
+        separators: ["\n\n", "\n", ". ", " ", ""]
       )
     end
     
@@ -21,7 +20,15 @@ module RubyRag
       chunks = @splitter.chunks(text)
       
       # Add metadata to each chunk
-      chunks.map.with_index do |chunk_text, index|
+      # Baran returns chunks as hashes with :text and :cursor keys
+      chunks.map.with_index do |chunk_data, index|
+        # Extract the actual text from the chunk
+        chunk_text = if chunk_data.is_a?(Hash)
+          chunk_data[:text] || chunk_data["text"]
+        else
+          chunk_data.to_s
+        end
+        
         {
           text: chunk_text,
           index: index,
@@ -48,7 +55,7 @@ module RubyRag
         file_path: File.absolute_path(file_path),
         file_name: File.basename(file_path),
         file_size: File.size(file_path),
-        file_modified: File.mtime(file_path).iso8601
+        file_modified: File.mtime(file_path).to_s
       }
       
       chunk_text(text, metadata)
