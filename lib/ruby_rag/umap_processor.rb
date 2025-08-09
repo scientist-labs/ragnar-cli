@@ -8,7 +8,7 @@ module RubyRag
       @umap_model = nil
     end
     
-    def train(n_components: 50, n_neighbors: 15, min_dist: 0.1)
+    def train(n_components: RubyRag::DEFAULT_REDUCED_DIMENSIONS, n_neighbors: 15, min_dist: 0.1)
       puts "Loading embeddings from database..."
       
       # Get all embeddings
@@ -76,30 +76,23 @@ module RubyRag
         end
       end
       
-      # Perform the actual training using the simple API
-      result = AnnEmbed.umap(
-        embedding_matrix,
+      # Perform the actual training using the class-based API
+      @umap_instance = AnnEmbed::UMAP.new(
         n_components: n_components,
-        n_neighbors: n_neighbors,
-        min_dist: min_dist,
-        spread: 1.0
+        n_neighbors: n_neighbors
       )
+      
+      @reduced_embeddings = @umap_instance.fit_transform(embedding_matrix)
       
       @training_complete = true
       progress_thread.join
       progressbar.finish
       
-      # Convert Numo array result to Ruby arrays for storage
-      # result is a Numo::DFloat with shape [n_samples, n_components]
-      @reduced_embeddings = result.to_a
-      
-      # Store the parameters for later use (since we can't save/load with simple API)
+      # Store the parameters for saving
       @model_params = {
         n_components: n_components,
         n_neighbors: n_neighbors,
-        min_dist: min_dist,
-        training_data: embedding_matrix,
-        reduced_embeddings: @reduced_embeddings
+        min_dist: min_dist
       }
       
       # Save the model
@@ -113,17 +106,12 @@ module RubyRag
     end
     
     def apply(batch_size: 100)
-      unless File.exist?(@model_path)
-        raise "UMAP model not found at #{@model_path}. Please train a model first."
-      end
+      # Load the trained UMAP model (reduced embeddings)
+      reduced_embeddings = load_model
       
-      # Load the model parameters
-      load_model
+      puts "Applying saved UMAP embeddings to database..."
       
-      puts "Note: Using re-computation approach for UMAP transformation"
-      puts "Loading embeddings from database..."
-      
-      # Get all embeddings
+      # Get all embeddings from database
       all_docs = @database.get_embeddings
       
       if all_docs.empty?
@@ -135,38 +123,33 @@ module RubyRag
         }
       end
       
-      puts "Found #{all_docs.size} embeddings to process"
+      puts "Found #{all_docs.size} documents in database"
+      puts "Loaded #{reduced_embeddings.size} reduced embeddings from model"
       
-      # Extract all embeddings
-      all_embeddings = all_docs.map { |d| d[:embedding] }
-      
-      # Re-run UMAP on all data with saved parameters
-      # This is a limitation of the simple API - we can't incrementally transform
-      puts "Applying UMAP to all embeddings..."
-      result = AnnEmbed.umap(
-        all_embeddings,
-        n_components: @model_params[:n_components],
-        n_neighbors: @model_params[:n_neighbors],
-        min_dist: @model_params[:min_dist],
-        spread: 1.0
-      )
-      
-      # Convert Numo array to Ruby array
-      reduced = result.to_a
-      
-      # Prepare updates
-      updates = all_docs.each_with_index.map do |doc, idx|
-        {
-          id: doc[:id],
-          reduced_embedding: reduced[idx]
+      if all_docs.size != reduced_embeddings.size
+        puts "⚠️  Warning: Mismatch between database documents (#{all_docs.size}) and model embeddings (#{reduced_embeddings.size})"
+        puts "   This suggests the model was trained on a different dataset."
+        puts "   Please retrain the UMAP model after indexing all your documents."
+        return {
+          processed: 0,
+          skipped: 0,
+          errors: 1
         }
       end
       
-      # Update database
+      # Prepare updates - match document IDs to reduced embeddings
+      updates = all_docs.each_with_index.map do |doc, idx|
+        {
+          id: doc[:id],
+          reduced_embedding: reduced_embeddings[idx]
+        }
+      end
+      
+      puts "Updating database with reduced embeddings..."
       @database.update_reduced_embeddings(updates)
       
       {
-        processed: all_docs.size,
+        processed: updates.size,
         skipped: 0,
         errors: 0
       }
@@ -195,24 +178,41 @@ module RubyRag
     end
     
     def save_model
-      return unless @model_params
+      return unless @umap_instance && @reduced_embeddings
       
-      # Save model parameters and training data to a file
-      # Since AnnEmbed.umap doesn't support save/load, we store the parameters
-      File.open(@model_path, 'wb') do |f|
-        Marshal.dump(@model_params, f)
-      end
-      puts "Model parameters saved to: #{@model_path}"
+      # Save the trained UMAP model for transforming new queries
+      @umap_instance.save(@model_path)
+      puts "UMAP model saved to: #{@model_path}"
+      
+      # Also cache the reduced embeddings separately for the apply method
+      embeddings_path = @model_path.sub(/\.bin$/, '_embeddings.json')
+      AnnEmbed::UMAP.export_data(@reduced_embeddings, embeddings_path)
+      puts "Reduced embeddings cached to: #{embeddings_path}"
     end
     
     def load_model
-      return @model_params if @model_params
+      return @reduced_embeddings if @reduced_embeddings
       
-      # Load model parameters from file
-      File.open(@model_path, 'rb') do |f|
-        @model_params = Marshal.load(f)
+      # For the apply method, we need the pre-computed embeddings
+      embeddings_path = @model_path.sub(/\.bin$/, '_embeddings.json')
+      unless File.exist?(embeddings_path)
+        raise "Cached embeddings not found at #{embeddings_path}. Please train a model first."
       end
-      @model_params
+      
+      @reduced_embeddings = AnnEmbed::UMAP.import_data(embeddings_path)
+      puts "Cached embeddings loaded from: #{embeddings_path}"
+      @reduced_embeddings
+    end
+    
+    def load_umap_model
+      # Load the actual UMAP model for transforming new data
+      unless File.exist?(@model_path)
+        raise "UMAP model not found at #{@model_path}. Please train a model first."
+      end
+      
+      @umap_instance ||= AnnEmbed::UMAP.load(@model_path)
+      puts "UMAP model loaded from: #{@model_path}"
+      @umap_instance
     end
     
     def self.optimal_dimensions(original_dims, target_ratio: 0.1)

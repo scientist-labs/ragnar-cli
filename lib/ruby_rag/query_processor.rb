@@ -1,4 +1,5 @@
 require 'json'
+require 'singleton'
 
 module RubyRag
   class QueryProcessor
@@ -8,6 +9,7 @@ module RubyRag
       @database = Database.new(db_path)
       @embedder = Embedder.new
       @llm_manager = LLMManager.instance
+      @umap_service = UmapTransformService.instance
       @rewriter = QueryRewriter.new(llm_manager: @llm_manager)
       @reranker = nil # Will initialize when needed
     end
@@ -192,10 +194,48 @@ module RubyRag
           puts "  Searching vector database..."
         end
         
-        # Vector search
+        # Check if we have reduced embeddings available for more efficient search
+        stats = @database.get_stats
+        use_reduced = stats[:with_reduced_embeddings] > 0
+        
+        # Prepare the search embedding (either full or reduced)
+        search_embedding = query_embedding
+        
+        if use_reduced
+          # Check if UMAP model is available
+          model_path = "./umap_model.bin"
+          
+          if @umap_service.model_available?(model_path)
+            if verbose
+              puts "  Transforming query to reduced space (#{stats[:reduced_dims]}D)"
+            end
+            
+            begin
+              # Transform the query embedding to reduced space
+              search_embedding = @umap_service.transform_query(query_embedding, model_path)
+              
+              if verbose
+                puts "  ✓ Query transformed to #{search_embedding.size}D"
+                puts "  Searching with reduced embeddings..."
+              end
+            rescue => e
+              puts "  ⚠️  Failed to transform query: #{e.message}" if verbose
+              puts "  Falling back to full embeddings" if verbose
+              use_reduced = false
+            end
+          else
+            if verbose
+              puts "  Note: Reduced embeddings available but UMAP model not found"
+              puts "  Falling back to full embeddings"
+            end
+            use_reduced = false
+          end
+        end
+        
         vector_results = @database.search_similar(
-          query_embedding,
-          k: k
+          search_embedding,
+          k: k,
+          use_reduced: use_reduced
         )
         
         if verbose
