@@ -1,16 +1,12 @@
 module RubyRag
   class QueryRewriter
-    def initialize(model_id: nil)
-      @model_id = model_id || "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
-      @model = nil
+    def initialize(llm_manager: nil)
+      @llm_manager = llm_manager || LLMManager.instance
     end
     
     def rewrite(query)
-      # Load the model lazily
-      @model ||= Candle::LLM.from_pretrained(
-        @model_id,
-        gguf_file: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-      )
+      # Get the cached LLM
+      model = @llm_manager.default_llm
       
       # Define the JSON schema for structured output
       schema = {
@@ -57,7 +53,7 @@ module RubyRag
       
       begin
         # Use structured generation with schema
-        result = @model.generate_structured(
+        result = model.generate_structured(
           prompt,
           schema: schema
         )

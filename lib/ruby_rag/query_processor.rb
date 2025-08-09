@@ -7,9 +7,9 @@ module RubyRag
     def initialize(db_path: RubyRag::DEFAULT_DB_PATH)
       @database = Database.new(db_path)
       @embedder = Embedder.new
-      @rewriter = QueryRewriter.new
+      @llm_manager = LLMManager.instance
+      @rewriter = QueryRewriter.new(llm_manager: @llm_manager)
       @reranker = nil # Will initialize when needed
-      @llm = nil # Will initialize when needed
     end
     
     def query(user_query, top_k: 3, verbose: false)
@@ -57,11 +57,23 @@ module RubyRag
       puts "\n4. Preparing context..." if verbose
       context_docs = prepare_context(reranked[0...top_k], rewritten['context_needed'])
       
-      # Step 5: Generate response
-      puts "\n5. Generating response..." if verbose
+      # Step 5: Repack context for optimal LLM consumption
+      puts "\n5. Repacking context..." if verbose
+      repacked_context = ContextRepacker.repack(
+        context_docs,
+        rewritten['clarified_intent']
+      )
+      
+      if verbose
+        puts "   Original context size: #{context_docs.sum { |d| (d[:chunk_text] || "").length }} chars"
+        puts "   Repacked context size: #{repacked_context.length} chars"
+      end
+      
+      # Step 6: Generate response
+      puts "\n6. Generating response..." if verbose
       response = generate_response(
         query: rewritten['clarified_intent'],
-        documents: context_docs,
+        repacked_context: repacked_context,
         query_type: rewritten['query_type']
       )
       
@@ -167,32 +179,19 @@ module RubyRag
       documents.first(context_size)
     end
     
-    def generate_response(query:, documents:, query_type:)
-      # Initialize LLM if not already done
-      @llm ||= Candle::LLM.from_pretrained(
-        "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
-        gguf_file: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-      )
+    def generate_response(query:, repacked_context:, query_type:)
+      # Get cached LLM from manager
+      llm = @llm_manager.default_llm
       
-      # Prepare context from documents
-      context = documents.map.with_index do |doc, idx|
-        text = doc[:chunk_text] || doc[:text] || ""
-        "Document #{idx + 1}:\n#{text}\n"
-      end.join("\n")
-      
-      # Create prompt based on query type
-      prompt = build_prompt(query, context, query_type)
+      # Create prompt with repacked context
+      prompt = build_prompt(query, repacked_context, query_type)
       
       # Generate response using default config
-      @llm.generate(prompt)
+      llm.generate(prompt)
     rescue => e
-      # Fallback to simple concatenation if LLM fails
+      # Fallback to returning the repacked context
       puts "Warning: LLM generation failed (#{e.message})"
-      "Based on the retrieved documents:\n\n" +
-      documents.map { |d| 
-        text = d[:chunk_text] || d[:text] || ""
-        "- #{text[0..200]}..."
-      }.join("\n\n")
+      "Based on the retrieved information:\n\n#{repacked_context[0..500]}..."
     end
     
     def build_prompt(query, context, query_type)

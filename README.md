@@ -25,13 +25,18 @@ graph TB
     end
     
     subgraph "Query Pipeline"
+        LLMCache[LLM Manager<br/>Cached Instance]
         Q[User Query] --> QR[Query Rewriter<br/>red-candle LLM]
         QR --> QE[Query Embedder<br/>red-candle]
         QE --> VS[Vector Search<br/>lancelot]
         VS --> RRF[RRF Fusion]
         RRF --> RR[Reranker<br/>red-candle]
-        RR --> LLM[Response Generation<br/>red-candle LLM]
+        RR --> RP[Context Repacker<br/>Deduplication & Organization]
+        RP --> LLM[Response Generation<br/>red-candle LLM]
         LLM --> R[Answer]
+        
+        LLMCache -.-> QR
+        LLMCache -.-> LLM
     end
     
     D -.-> VS
@@ -91,7 +96,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Q[User Query] --> QA[Query Analysis]
+    Q[User Query] --> QA[Query Analysis<br/>w/ Cached LLM]
     
     QA --> CI[Clarified Intent]
     QA --> SQ[Sub-queries]
@@ -106,7 +111,9 @@ flowchart TB
     RANK --> TOP[Top-K Documents]
     TOP --> CTX[Context Preparation]
     
-    CTX --> GEN[LLM Generation]
+    CTX --> REPACK[Context Repacking<br/>Deduplication<br/>Summarization<br/>Organization]
+    
+    REPACK --> GEN[LLM Generation<br/>w/ Same Cached LLM]
     CI --> GEN
     
     GEN --> ANS[Final Answer]
@@ -176,7 +183,9 @@ Reduce embedding dimensions for faster search:
 2. **Multi-Query Search**: Searches with multiple query variations
 3. **RRF Fusion**: Combines results using Reciprocal Rank Fusion
 4. **Reranking**: Uses cross-encoder for precise relevance scoring
-5. **Contextual Response**: Generates answers with LLM based on retrieved context
+5. **Context Repacking**: Deduplicates and organizes retrieved chunks for optimal LLM consumption
+6. **LLM Caching**: Single LLM instance shared between query rewriting and response generation
+7. **Contextual Response**: Generates answers with LLM based on repacked context
 
 ### Embedding Management
 
@@ -284,14 +293,17 @@ processor.train(
 
 - **Indexing**: ~100MB per 1000 documents (768D embeddings)
 - **UMAP Training**: ~80MB for 10,000 vectors
-- **Query Processing**: ~50MB overhead for models
+- **Query Processing**: ~50MB overhead for models (reduced with LLM caching)
+- **LLM Caching**: Single model instance (~500MB-2GB depending on model size)
 
 ### Speed Benchmarks
 
 - **Indexing**: ~10 documents/second (including embedding)
 - **UMAP Training**: 30-60 seconds for 10,000 vectors
-- **Query Processing**: 1-3 seconds per query
+- **Query Processing**: 1-3 seconds per query (faster with cached LLM)
 - **Vector Search**: <100ms for 100,000 vectors
+- **Context Repacking**: <50ms for typical document sets
+- **LLM Loading**: 2-5 seconds (only on first query with caching)
 
 ### Optimization Tips
 
@@ -341,8 +353,10 @@ gem build ruby-rag.gemspec
 | Component | Purpose | Key Methods |
 |-----------|---------|-------------|
 | Chunker | Split text into semantic chunks | `chunk_text()` |
-| Embedder | Generate vector embeddings | `embed()`, `embed_batch()` |
-| Database | Store and search vectors | `add_document()`, `search()` |
+| Embedder | Generate vector embeddings | `embed_text()`, `embed_batch()` |
+| Database | Store and search vectors | `add_document()`, `search_similar()` |
+| LLMManager | Cache and manage LLM instances | `get_llm()`, `default_llm()` |
+| ContextRepacker | Optimize retrieved context | `repack()`, `repack_with_summary()` |
 | QueryRewriter | Analyze and expand queries | `rewrite()` |
 | QueryProcessor | Orchestrate query pipeline | `query()` |
 | UmapProcessor | Reduce embedding dimensions | `train()`, `apply()` |
@@ -353,11 +367,12 @@ gem build ruby-rag.gemspec
 2. **Text chunks** → Embedder → Embeddings (768D)
 3. **Embeddings** → Database → Stored vectors
 4. **Stored vectors** → UMAP → Reduced vectors (2-50D)
-5. **Query** → Rewriter → Sub-queries
+5. **Query** → Rewriter (w/ cached LLM) → Sub-queries
 6. **Sub-queries** → Embedder → Query vectors
 7. **Query vectors** → Database → Similar documents
 8. **Documents** → Reranker → Top results
-9. **Top results** → LLM → Final answer
+9. **Top results** → Context Repacker → Optimized context
+10. **Optimized context** → LLM (same cached instance) → Final answer
 
 ## Contributing
 

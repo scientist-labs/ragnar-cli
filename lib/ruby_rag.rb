@@ -7,6 +7,7 @@ require "tty-progressbar"
 require "securerandom"
 require "json"
 require "fileutils"
+require "singleton"
 
 module RubyRag
   class Error < StandardError; end
@@ -23,6 +24,8 @@ require_relative "ruby_rag/chunker"
 require_relative "ruby_rag/embedder"
 require_relative "ruby_rag/indexer"
 require_relative "ruby_rag/umap_processor"
+require_relative "ruby_rag/llm_manager"
+require_relative "ruby_rag/context_repacker"
 require_relative "ruby_rag/query_rewriter"
 require_relative "ruby_rag/query_processor"
 require_relative "ruby_rag/cli"
