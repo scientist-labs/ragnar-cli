@@ -1,14 +1,15 @@
 module RubyRag
   class QueryRewriter
-    def initialize(model_path: nil)
-      @model_path = model_path || "Qwen/Qwen2.5-1.5B-Instruct"
+    def initialize(model_id: nil)
+      @model_id = model_id || "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+      @model = nil
     end
     
     def rewrite(query)
-      # Load the model
-      model = Candle::Model.new(
-        model_id: @model_path,
-        dtype: "f32"
+      # Load the model lazily
+      @model ||= Candle::LLM.from_pretrained(
+        @model_id,
+        gguf_file: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
       )
       
       # Define the JSON schema for structured output
@@ -55,13 +56,13 @@ module RubyRag
       PROMPT
       
       begin
-        result = model.generate(
-          prompt: prompt,
-          max_tokens: 500,
-          temperature: 0.3,
+        # Use structured generation with schema
+        result = @model.generate_structured(
+          prompt,
           schema: schema
         )
         
+        # The result should already be a JSON string
         JSON.parse(result)
       rescue => e
         # Fallback to simple rewriting if structured generation fails

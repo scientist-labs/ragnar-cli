@@ -69,7 +69,12 @@ module RubyRag
         query: user_query,
         clarified: rewritten['clarified_intent'],
         answer: response,
-        sources: context_docs.map { |d| d[:metadata] },
+        sources: context_docs.map { |d| 
+          {
+            source_file: d[:file_path] || d[:source_file],
+            chunk_index: d[:chunk_index]
+          }
+        },
         sub_queries: rewritten['sub_queries'],
         confidence: calculate_confidence(reranked[0...top_k])
       }
@@ -84,11 +89,11 @@ module RubyRag
         puts "   Searching: #{query}" if verbose
         
         # Generate embedding for the query
-        query_embedding = @embedder.embed(query)
+        query_embedding = @embedder.embed_text(query)
         
         # Vector search
-        vector_results = @database.search(
-          embedding: query_embedding,
+        vector_results = @database.search_similar(
+          query_embedding,
           k: k
         )
         
@@ -131,23 +136,20 @@ module RubyRag
     def rerank_documents(query:, documents:, top_k:)
       # Initialize reranker if not already done
       @reranker ||= Candle::Reranker.new(
-        model_id: "BAAI/bge-reranker-base"
+        model_path: "cross-encoder/ms-marco-MiniLM-L-12-v2"
       )
       
-      # Prepare document texts
-      texts = documents.map { |doc| doc[:text] }
+      # Prepare document texts - use chunk_text field
+      texts = documents.map { |doc| doc[:chunk_text] || doc[:text] || "" }
       
-      # Rerank
-      scores = @reranker.rerank(
-        query: query,
-        documents: texts
-      )
+      # Rerank - returns array of {doc_id:, score:, text:}
+      reranked = @reranker.rerank(query, texts)
       
-      # Combine scores with documents and sort
-      documents.zip(scores)
-        .sort_by { |_, score| -score }
-        .map(&:first)
-        .first(top_k)
+      # Map back to original documents with scores
+      reranked.map do |result|
+        doc_idx = result[:doc_id]
+        documents[doc_idx]
+      end.first(top_k)
     rescue => e
       puts "Warning: Reranking failed (#{e.message}), using original order"
       documents.first(top_k)
@@ -167,53 +169,48 @@ module RubyRag
     
     def generate_response(query:, documents:, query_type:)
       # Initialize LLM if not already done
-      @llm ||= Candle::Model.new(
-        model_id: "Qwen/Qwen2.5-1.5B-Instruct",
-        dtype: "f32"
+      @llm ||= Candle::LLM.from_pretrained(
+        "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+        gguf_file: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
       )
       
       # Prepare context from documents
       context = documents.map.with_index do |doc, idx|
-        "Document #{idx + 1}:\n#{doc[:text]}\n"
+        text = doc[:chunk_text] || doc[:text] || ""
+        "Document #{idx + 1}:\n#{text}\n"
       end.join("\n")
       
       # Create prompt based on query type
       prompt = build_prompt(query, context, query_type)
       
-      # Generate response
-      @llm.generate(
-        prompt: prompt,
-        max_tokens: 500,
-        temperature: 0.7
-      )
+      # Generate response using default config
+      @llm.generate(prompt)
     rescue => e
       # Fallback to simple concatenation if LLM fails
+      puts "Warning: LLM generation failed (#{e.message})"
       "Based on the retrieved documents:\n\n" +
-      documents.map { |d| "- #{d[:text][0..200]}..." }.join("\n\n")
+      documents.map { |d| 
+        text = d[:chunk_text] || d[:text] || ""
+        "- #{text[0..200]}..."
+      }.join("\n\n")
     end
     
     def build_prompt(query, context, query_type)
       base_prompt = <<~PROMPT
-        You are a helpful assistant answering questions based on provided context.
-        
+        <|system|>
+        You are a helpful assistant. Answer questions based ONLY on the provided context.
+        If the answer is not in the context, say "I don't have enough information to answer that question."
+        </s>
+        <|user|>
         Context:
         #{context}
         
         Question: #{query}
+        </s>
+        <|assistant|>
       PROMPT
       
-      case query_type
-      when "factual"
-        base_prompt + "\nProvide a direct, factual answer based on the context."
-      when "analytical"
-        base_prompt + "\nAnalyze the information and provide insights."
-      when "comparative"
-        base_prompt + "\nCompare and contrast the relevant information."
-      when "procedural"
-        base_prompt + "\nProvide step-by-step instructions or process description."
-      else
-        base_prompt + "\nAnswer the question based on the context provided."
-      end
+      base_prompt
     end
     
     def calculate_confidence(documents)

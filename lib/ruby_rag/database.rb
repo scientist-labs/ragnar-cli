@@ -122,7 +122,7 @@ module RubyRag
       results = dataset.vector_search(
         embedding.to_a, 
         column: embedding_field,
-        k: k
+        limit: k
       )
       
       results.map do |row|
