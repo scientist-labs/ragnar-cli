@@ -26,26 +26,40 @@ module RubyRag
       
       puts "Found #{embeddings.size} embeddings"
       
-      # Convert to matrix format for Annembed
+      # Adjust parameters based on the number of samples
+      # UMAP requires n_neighbors < n_samples
+      # Also, n_components should be less than n_samples for stability
+      n_samples = embeddings.size
+      
+      if n_neighbors >= n_samples
+        n_neighbors = [3, (n_samples - 1) / 2].max.to_i
+        puts "  Adjusted n_neighbors to #{n_neighbors} (was #{15}, but only have #{n_samples} samples)"
+      end
+      
+      if n_components >= n_samples
+        n_components = [2, n_samples - 1].min
+        puts "  Adjusted n_components to #{n_components} (was #{50}, but only have #{n_samples} samples)"
+      end
+      
+      # Warn if we have very few samples
+      if n_samples < 100
+        puts "\n  ⚠️  Warning: UMAP works best with at least 100 samples."
+        puts "     You currently have #{n_samples} samples."
+        puts "     Consider indexing more documents for better results."
+      end
+      
+      # Convert to matrix format for AnnEmbed
+      # AnnEmbed expects a 2D array or Numo::NArray
       embedding_matrix = embeddings
       original_dims = embeddings.first.size
       
-      puts "Training UMAP model..."
+      puts "\nTraining UMAP model..."
       puts "  Original dimensions: #{original_dims}"
       puts "  Target dimensions: #{n_components}"
       puts "  Neighbors: #{n_neighbors}"
       puts "  Min distance: #{min_dist}"
       
-      # Train UMAP using Annembed
-      @umap_model = Annembed::Umap.new(
-        n_components: n_components,
-        n_neighbors: n_neighbors,
-        min_dist: min_dist,
-        metric: "euclidean",
-        random_state: 42
-      )
-      
-      # Fit the model
+      # Use the simple AnnEmbed.umap method
       progressbar = TTY::ProgressBar.new(
         "Training UMAP [:bar] :percent",
         total: 100,
@@ -53,16 +67,40 @@ module RubyRag
         width: 30
       )
       
-      # Simulate progress since Annembed doesn't provide callbacks
-      Thread.new do
+      # Start progress in background (AnnEmbed doesn't provide callbacks)
+      progress_thread = Thread.new do
         100.times do
-          sleep(0.1)
+          sleep(0.05)
           progressbar.advance
+          break if @training_complete
         end
       end
       
-      @umap_model.fit(embedding_matrix)
+      # Perform the actual training using the simple API
+      result = AnnEmbed.umap(
+        embedding_matrix,
+        n_components: n_components,
+        n_neighbors: n_neighbors,
+        min_dist: min_dist,
+        spread: 1.0
+      )
+      
+      @training_complete = true
+      progress_thread.join
       progressbar.finish
+      
+      # Convert Numo array result to Ruby arrays for storage
+      # result is a Numo::DFloat with shape [n_samples, n_components]
+      @reduced_embeddings = result.to_a
+      
+      # Store the parameters for later use (since we can't save/load with simple API)
+      @model_params = {
+        n_components: n_components,
+        n_neighbors: n_neighbors,
+        min_dist: min_dist,
+        training_data: embedding_matrix,
+        reduced_embeddings: @reduced_embeddings
+      }
       
       # Save the model
       save_model
@@ -79,57 +117,59 @@ module RubyRag
         raise "UMAP model not found at #{@model_path}. Please train a model first."
       end
       
-      # Load the model
+      # Load the model parameters
       load_model
       
+      puts "Note: Using re-computation approach for UMAP transformation"
       puts "Loading embeddings from database..."
       
-      # Get embeddings that don't have reduced versions yet
+      # Get all embeddings
       all_docs = @database.get_embeddings
       
-      docs_to_process = all_docs.select do |doc|
-        doc[:embedding] && (doc[:reduced_embedding].nil? || doc[:reduced_embedding].empty?)
-      end
-      
-      if docs_to_process.empty?
-        puts "All embeddings already have reduced versions."
+      if all_docs.empty?
+        puts "No embeddings found in database."
         return {
           processed: 0,
-          skipped: all_docs.size,
+          skipped: 0,
           errors: 0
         }
       end
       
-      puts "Found #{docs_to_process.size} embeddings to process"
+      puts "Found #{all_docs.size} embeddings to process"
       
-      stats = {
-        processed: 0,
-        skipped: all_docs.size - docs_to_process.size,
-        errors: 0
-      }
+      # Extract all embeddings
+      all_embeddings = all_docs.map { |d| d[:embedding] }
       
-      # Process in batches
-      progressbar = TTY::ProgressBar.new(
-        "Applying UMAP [:bar] :percent :current/:total",
-        total: docs_to_process.size,
-        bar_format: :block,
-        width: 30
+      # Re-run UMAP on all data with saved parameters
+      # This is a limitation of the simple API - we can't incrementally transform
+      puts "Applying UMAP to all embeddings..."
+      result = AnnEmbed.umap(
+        all_embeddings,
+        n_components: @model_params[:n_components],
+        n_neighbors: @model_params[:n_neighbors],
+        min_dist: @model_params[:min_dist],
+        spread: 1.0
       )
       
-      docs_to_process.each_slice(batch_size) do |batch|
-        begin
-          process_batch(batch)
-          stats[:processed] += batch.size
-        rescue => e
-          puts "\nError processing batch: #{e.message}"
-          stats[:errors] += batch.size
-        end
-        
-        progressbar.advance(batch.size)
+      # Convert Numo array to Ruby array
+      reduced = result.to_a
+      
+      # Prepare updates
+      updates = all_docs.each_with_index.map do |doc, idx|
+        {
+          id: doc[:id],
+          reduced_embedding: reduced[idx]
+        }
       end
       
-      progressbar.finish
-      stats
+      # Update database
+      @database.update_reduced_embeddings(updates)
+      
+      {
+        processed: all_docs.size,
+        skipped: 0,
+        errors: 0
+      }
     end
     
     private
@@ -139,6 +179,7 @@ module RubyRag
       embeddings = docs.map { |d| d[:embedding] }
       
       # Transform using UMAP
+      # The transform method returns a 2D array where each row is a reduced embedding
       reduced = @umap_model.transform(embeddings)
       
       # Prepare updates
@@ -154,19 +195,24 @@ module RubyRag
     end
     
     def save_model
-      return unless @umap_model
+      return unless @model_params
       
-      # Save UMAP model using Annembed's save functionality
-      @umap_model.save(@model_path)
-      puts "Model saved to: #{@model_path}"
+      # Save model parameters and training data to a file
+      # Since AnnEmbed.umap doesn't support save/load, we store the parameters
+      File.open(@model_path, 'wb') do |f|
+        Marshal.dump(@model_params, f)
+      end
+      puts "Model parameters saved to: #{@model_path}"
     end
     
     def load_model
-      return @umap_model if @umap_model
+      return @model_params if @model_params
       
-      # Load UMAP model using Annembed's load functionality
-      @umap_model = Annembed::Umap.load(@model_path)
-      @umap_model
+      # Load model parameters from file
+      File.open(@model_path, 'rb') do |f|
+        @model_params = Marshal.load(f)
+      end
+      @model_params
     end
     
     def self.optimal_dimensions(original_dims, target_ratio: 0.1)
