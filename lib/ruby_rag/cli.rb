@@ -95,6 +95,55 @@ module RubyRag
       end
     end
     
+    desc "query QUESTION", "Query the RAG system"
+    option :db_path, type: :string, default: RubyRag::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
+    option :verbose, type: :boolean, default: false, desc: "Show detailed processing steps"
+    option :json, type: :boolean, default: false, desc: "Output as JSON"
+    def query(question)
+      processor = QueryProcessor.new(db_path: options[:db_path])
+      
+      begin
+        result = processor.query(question, top_k: options[:top_k], verbose: options[:verbose])
+        
+        if options[:json]
+          puts JSON.pretty_generate(result)
+        else
+          say "\n" + "="*60, :green
+          say "Query: #{result[:query]}", :cyan
+          
+          if result[:clarified] != result[:query]
+            say "Clarified: #{result[:clarified]}", :yellow
+          end
+          
+          say "\nAnswer:", :green
+          say result[:answer]
+          
+          if result[:confidence]
+            say "\nConfidence: #{result[:confidence]}%", :magenta
+          end
+          
+          if result[:sources] && !result[:sources].empty?
+            say "\nSources:", :blue
+            result[:sources].each_with_index do |source, idx|
+              say "  #{idx + 1}. #{source[:source_file]}" if source[:source_file]
+            end
+          end
+          
+          if options[:verbose] && result[:sub_queries]
+            say "\nSub-queries used:", :yellow
+            result[:sub_queries].each { |sq| say "  - #{sq}" }
+          end
+          
+          say "="*60, :green
+        end
+      rescue => e
+        say "Error processing query: #{e.message}", :red
+        say e.backtrace.first(5).join("\n") if options[:verbose]
+        exit 1
+      end
+    end
+    
     desc "stats", "Show database statistics"
     option :db_path, type: :string, default: RubyRag::DEFAULT_DB_PATH, desc: "Path to Lance database"
     def stats
