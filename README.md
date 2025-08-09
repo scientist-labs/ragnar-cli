@@ -159,15 +159,31 @@ Reduce embedding dimensions for faster search:
 # Basic query
 ./bin/ruby-rag query "What is the main purpose of this project?"
 
-# Verbose mode shows processing steps
+# Verbose mode shows all intermediate processing steps
 ./bin/ruby-rag query "How does the chunking process work?" --verbose
+# Or use short form
+./bin/ruby-rag query "How does the chunking process work?" -v
 
 # JSON output for programmatic use
 ./bin/ruby-rag query "Explain the embedding model" --json
 
 # Adjust number of retrieved documents
 ./bin/ruby-rag query "What are the key features?" --top-k 5
+
+# Combine options for detailed analysis
+./bin/ruby-rag query "Compare Ruby with Python" -v --top-k 5
 ```
+
+#### Verbose Mode Output
+
+When using `--verbose` or `-v`, you'll see:
+1. **Query Analysis**: Original query, clarified intent, sub-queries, and key terms
+2. **Document Retrieval**: Each sub-query's embedding and search results
+3. **RRF Fusion**: How multiple search results are combined
+4. **Reranking**: Top documents after relevance scoring
+5. **Context Repacking**: How retrieved chunks are organized and compressed
+6. **Response Generation**: The final LLM prompt and response
+7. **Final Results**: Confidence score and source attribution
 
 ### 4. Check Statistics
 

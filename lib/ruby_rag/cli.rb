@@ -98,7 +98,7 @@ module RubyRag
     desc "query QUESTION", "Query the RAG system"
     option :db_path, type: :string, default: RubyRag::DEFAULT_DB_PATH, desc: "Path to Lance database"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
-    option :verbose, type: :boolean, default: false, desc: "Show detailed processing steps"
+    option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
     def query(question)
       processor = QueryProcessor.new(db_path: options[:db_path])

@@ -16,18 +16,35 @@ module RubyRag
       puts "Processing query: #{user_query}" if verbose
       
       # Step 1: Rewrite and analyze the query
-      puts "\n1. Analyzing query..." if verbose
+      puts "\n#{'-'*60}" if verbose
+      puts "STEP 1: Query Analysis & Rewriting" if verbose
+      puts "-"*60 if verbose
+      
       rewritten = @rewriter.rewrite(user_query)
       
       if verbose
-        puts "   Clarified intent: #{rewritten['clarified_intent']}"
-        puts "   Query type: #{rewritten['query_type']}"
-        puts "   Sub-queries:"
-        rewritten['sub_queries'].each { |sq| puts "     - #{sq}" }
+        puts "\nOriginal Query: #{user_query}"
+        puts "\nRewritten Query Analysis:"
+        puts "  Clarified Intent: #{rewritten['clarified_intent']}"
+        puts "  Query Type: #{rewritten['query_type']}"
+        puts "  Context Needed: #{rewritten['context_needed']}"
+        puts "\nGenerated Sub-queries (#{rewritten['sub_queries'].length}):"
+        rewritten['sub_queries'].each_with_index do |sq, idx|
+          puts "  #{idx + 1}. #{sq}"
+        end
+        if rewritten['key_terms'] && !rewritten['key_terms'].empty?
+          puts "\nKey Terms Identified:"
+          puts "  #{rewritten['key_terms'].join(', ')}"
+        end
       end
       
       # Step 2: Retrieve candidates using RRF
-      puts "\n2. Retrieving documents..." if verbose
+      if verbose
+        puts "\n#{'-'*60}"
+        puts "STEP 2: Document Retrieval with RRF"
+        puts "-"*60
+      end
+      
       candidates = retrieve_with_rrf(
         rewritten['sub_queries'],
         k: 20,
@@ -43,41 +60,92 @@ module RubyRag
         }
       end
       
-      puts "   Found #{candidates.size} candidate documents" if verbose
+      if verbose
+        puts "\nRetrieval Summary:"
+        puts "  Total candidates found: #{candidates.size}"
+        puts "  Unique sources: #{candidates.map { |c| c[:file_path] }.uniq.size}"
+      end
       
       # Step 3: Rerank candidates
-      puts "\n3. Reranking documents..." if verbose
+      if verbose
+        puts "\n#{'-'*60}"
+        puts "STEP 3: Document Reranking"
+        puts "-"*60
+      end
+      
       reranked = rerank_documents(
         query: rewritten['clarified_intent'],
         documents: candidates,
         top_k: top_k * 2  # Get more than we need for context
       )
       
+      if verbose && reranked.any?
+        puts "\nTop Reranked Documents:"
+        reranked[0..2].each_with_index do |doc, idx|
+          text_preview = (doc[:chunk_text] || doc[:text] || "")[0..100].gsub(/\s+/, ' ')
+          puts "  #{idx + 1}. [#{File.basename(doc[:file_path] || 'unknown')}]"
+          puts "     \"#{text_preview}...\""
+        end
+      end
+      
       # Step 4: Prepare context with neighboring chunks
-      puts "\n4. Preparing context..." if verbose
+      if verbose
+        puts "\n#{'-'*60}"
+        puts "STEP 4: Context Preparation"
+        puts "-"*60
+      end
+      
       context_docs = prepare_context(reranked[0...top_k], rewritten['context_needed'])
       
+      if verbose
+        puts "\nContext Documents Selected: #{context_docs.length}"
+        puts "Context strategy: #{rewritten['context_needed']}"
+      end
+      
       # Step 5: Repack context for optimal LLM consumption
-      puts "\n5. Repacking context..." if verbose
+      if verbose
+        puts "\n#{'-'*60}"
+        puts "STEP 5: Context Repacking"
+        puts "-"*60
+      end
+      
       repacked_context = ContextRepacker.repack(
         context_docs,
         rewritten['clarified_intent']
       )
       
       if verbose
-        puts "   Original context size: #{context_docs.sum { |d| (d[:chunk_text] || "").length }} chars"
-        puts "   Repacked context size: #{repacked_context.length} chars"
+        original_size = context_docs.sum { |d| (d[:chunk_text] || "").length }
+        puts "\nContext Optimization:"
+        puts "  Original size: #{original_size} chars"
+        puts "  Repacked size: #{repacked_context.length} chars"
+        puts "  Compression ratio: #{(100.0 * repacked_context.length / original_size).round(1)}%"
+        puts "\nRepacked Context Preview:"
+        puts "-" * 40
+        puts repacked_context[0..500] + "..."
+        puts "-" * 40
       end
       
       # Step 6: Generate response
-      puts "\n6. Generating response..." if verbose
+      if verbose
+        puts "\n#{'-'*60}"
+        puts "STEP 6: Response Generation"
+        puts "-"*60
+      end
       response = generate_response(
         query: rewritten['clarified_intent'],
         repacked_context: repacked_context,
         query_type: rewritten['query_type']
       )
       
-      {
+      if verbose
+        puts "\nGenerated Response:"
+        puts "-" * 40
+        puts response
+        puts "-" * 40
+      end
+      
+      result = {
         query: user_query,
         clarified: rewritten['clarified_intent'],
         answer: response,
@@ -90,6 +158,19 @@ module RubyRag
         sub_queries: rewritten['sub_queries'],
         confidence: calculate_confidence(reranked[0...top_k])
       }
+      
+      if verbose
+        puts "\n#{'-'*60}"
+        puts "FINAL RESULTS"
+        puts "-"*60
+        puts "\nConfidence Score: #{result[:confidence]}%"
+        puts "\nSources Used:"
+        result[:sources].each_with_index do |source, idx|
+          puts "  #{idx + 1}. #{source[:source_file]} (chunk #{source[:chunk_index]})"
+        end
+      end
+      
+      result
     end
     
     private
@@ -98,16 +179,32 @@ module RubyRag
       all_results = []
       
       queries.each_with_index do |query, idx|
-        puts "   Searching: #{query}" if verbose
+        if verbose
+          puts "\nSub-query #{idx + 1}: \"#{query}\""
+          puts "  Generating embedding..."
+        end
         
         # Generate embedding for the query
         query_embedding = @embedder.embed_text(query)
+        
+        if verbose
+          puts "  Embedding dimensions: #{query_embedding.length}"
+          puts "  Searching vector database..."
+        end
         
         # Vector search
         vector_results = @database.search_similar(
           query_embedding,
           k: k
         )
+        
+        if verbose
+          puts "  Found #{vector_results.length} matches"
+          if vector_results.any?
+            best = vector_results.first
+            puts "  Best match: [#{File.basename(best[:file_path] || 'unknown')}] (distance: #{best[:distance]&.round(3)})"
+          end
+        end
         
         # Add query index for RRF
         vector_results.each do |result|
@@ -118,8 +215,19 @@ module RubyRag
         all_results.concat(vector_results)
       end
       
+      if verbose
+        puts "\nApplying Reciprocal Rank Fusion..."
+        puts "  Total results before fusion: #{all_results.length}"
+      end
+      
       # Apply Reciprocal Rank Fusion
-      apply_rrf(all_results, k: k)
+      fused = apply_rrf(all_results, k: k)
+      
+      if verbose
+        puts "  Results after RRF: #{fused.length}"
+      end
+      
+      fused
     end
     
     def apply_rrf(results, k: 60)
