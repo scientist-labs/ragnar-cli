@@ -34,14 +34,10 @@ module RubyRag
         metadata: :string
       }
       
-      # Create or append to Lance table
-      if dataset_exists?
-        dataset = Lancelot::Dataset.open(@db_path)
-        dataset.add_documents(data)
-      else
-        dataset = Lancelot::Dataset.create(@db_path, schema: schema)
-        dataset.add_documents(data)
-      end
+      # Use the new open_or_create method from Lancelot
+      # This automatically handles both creating new and opening existing datasets
+      dataset = Lancelot::Dataset.open_or_create(@db_path, schema: schema)
+      dataset.add_documents(data)
     end
     
     def get_embeddings(limit: nil, offset: 0)
@@ -107,7 +103,8 @@ module RubyRag
       
       # Remove old dataset and create new one with updated data
       FileUtils.rm_rf(@db_path)
-      dataset = Lancelot::Dataset.create(@db_path, schema: schema)
+      # Use open_or_create which will create since we just deleted the path
+      dataset = Lancelot::Dataset.open_or_create(@db_path, schema: schema)
       dataset.add_documents(updated_docs)
     end
     
@@ -208,12 +205,6 @@ module RubyRag
       end
     end
     
-    private
-    
-    def ensure_database_exists
-      # Don't create directory - Lance will handle this
-    end
-    
     def dataset_exists?
       return false unless File.exist?(@db_path)
       
@@ -223,6 +214,12 @@ module RubyRag
       rescue
         false
       end
+    end
+    
+    private
+    
+    def ensure_database_exists
+      # Don't create directory - Lance will handle this
     end
     
     def table_exists?

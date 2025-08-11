@@ -3,18 +3,28 @@ PATH
   specs:
     annembed-ruby (0.1.0)
 
+PATH
+  remote: ../lancelot
+  specs:
+    lancelot (0.3.1)
+      rb_sys (~> 0.9)
+
+PATH
+  remote: ../parser-core-ruby
+  specs:
+    parser-core-ruby (0.1.0)
+      rb_sys (~> 0.9)
+
 GEM
   remote: https://rubygems.org/
   specs:
     baran (0.2.1)
     diff-lcs (1.6.2)
-    lancelot (0.2.0)
-      rb_sys (~> 0.9)
     rake (13.3.0)
     rake-compiler-dock (1.9.1)
     rb_sys (0.9.117)
       rake-compiler-dock (= 1.9.1)
-    red-candle (1.1.2)
+    red-candle (1.2.0)
       rb_sys
     rspec (3.13.1)
       rspec-core (~> 3.13.0)
@@ -48,7 +58,8 @@ PLATFORMS
 DEPENDENCIES
   annembed-ruby!
   baran (~> 0.2)
-  lancelot
+  lancelot!
+  parser-core-ruby!
   rake (~> 13.0)
   red-candle
   rspec (~> 3.0)

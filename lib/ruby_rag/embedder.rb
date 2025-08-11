@@ -67,39 +67,22 @@ module RubyRag
     private
     
     def load_model(model_name)
-      # Initialize Candle embedding model
-      # Map common model names to Candle-compatible paths and types
-      model_configs = {
-        "BAAI/bge-small-en-v1.5" => {
-          model_path: "BAAI/bge-small-en-v1.5",
-          model_type: "bert"
-        },
-        "bge-small-en-v1.5" => {
-          model_path: "BAAI/bge-small-en-v1.5", 
-          model_type: "bert"
-        },
-        "jinaai/jina-embeddings-v2-base-en" => {
-          model_path: "jinaai/jina-embeddings-v2-base-en",
-          model_type: "jina_bert"
-        }
-      }
-      
-      config = model_configs[model_name] || {
-        model_path: Candle::EmbeddingModel::DEFAULT_MODEL_PATH,
-        model_type: Candle::EmbeddingModel::DEFAULT_EMBEDDING_MODEL_TYPE
-      }
-      
+      # Initialize Candle embedding model using the new standardized from_pretrained method
       begin
-        Candle::EmbeddingModel.new(
-          model_path: config[:model_path],
-          model_type: config[:model_type]
-        )
+        # Try to load the model using from_pretrained
+        Candle::EmbeddingModel.from_pretrained(model_name)
       rescue => e
         puts "Warning: Could not load model #{model_name}, falling back to default"
         puts "Error: #{e.message}"
         
-        # Fall back to default Jina model
-        Candle::EmbeddingModel.new
+        # Fall back to default model
+        begin
+          Candle::EmbeddingModel.from_pretrained("jinaai/jina-embeddings-v2-base-en")
+        rescue => fallback_error
+          puts "Error loading fallback model: #{fallback_error.message}"
+          # Last resort: try the old initialization method for backwards compatibility
+          Candle::EmbeddingModel.new
+        end
       end
     end
     
