@@ -84,9 +84,12 @@ module RubyRag
       if verbose && reranked.any?
         puts "\nTop Reranked Documents:"
         reranked[0..2].each_with_index do |doc, idx|
-          text_preview = (doc[:chunk_text] || doc[:text] || "")[0..100].gsub(/\s+/, ' ')
+          full_text = (doc[:chunk_text] || doc[:text] || "").gsub(/\s+/, ' ')
           puts "  #{idx + 1}. [#{File.basename(doc[:file_path] || 'unknown')}]"
-          puts "     \"#{text_preview}...\""
+          puts "     Score: #{doc[:score]&.round(4) if doc[:score]}"
+          puts "     Full chunk (#{full_text.length} chars):"
+          puts "     \"#{full_text}\""
+          puts ""
         end
       end
       
@@ -122,9 +125,9 @@ module RubyRag
         puts "  Original size: #{original_size} chars"
         puts "  Repacked size: #{repacked_context.length} chars"
         puts "  Compression ratio: #{(100.0 * repacked_context.length / original_size).round(1)}%"
-        puts "\nRepacked Context Preview:"
+        puts "\nFull Repacked Context:"
         puts "-" * 40
-        puts repacked_context[0..500] + "..."
+        puts repacked_context
         puts "-" * 40
       end
       
@@ -295,8 +298,8 @@ module RubyRag
     
     def rerank_documents(query:, documents:, top_k:)
       # Initialize reranker if not already done
-      @reranker ||= Candle::Reranker.new(
-        model_path: "cross-encoder/ms-marco-MiniLM-L-12-v2"
+      @reranker ||= Candle::Reranker.from_pretrained(
+        "cross-encoder/ms-marco-MiniLM-L-12-v2"
       )
       
       # Prepare document texts - use chunk_text field
