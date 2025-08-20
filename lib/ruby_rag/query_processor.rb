@@ -1,5 +1,7 @@
 require 'json'
 require 'singleton'
+require 'set'
+require 'digest'
 
 module RubyRag
   class QueryProcessor
@@ -297,13 +299,31 @@ module RubyRag
     end
     
     def rerank_documents(query:, documents:, top_k:)
+      # Deduplicate documents based on chunk_text before reranking
+      seen_texts = Set.new
+      unique_docs = []
+      
+      documents.each do |doc|
+        text = doc[:chunk_text] || doc[:text] || ""
+        text_hash = Digest::SHA256.hexdigest(text)
+        
+        unless seen_texts.include?(text_hash)
+          seen_texts.add(text_hash)
+          unique_docs << doc
+        end
+      end
+      
+      if documents.length > unique_docs.length && @verbose
+        puts "  Deduplicated: #{documents.length} -> #{unique_docs.length} documents"
+      end
+      
       # Initialize reranker if not already done
       @reranker ||= Candle::Reranker.from_pretrained(
         "cross-encoder/ms-marco-MiniLM-L-12-v2"
       )
       
       # Prepare document texts - use chunk_text field
-      texts = documents.map { |doc| doc[:chunk_text] || doc[:text] || "" }
+      texts = unique_docs.map { |doc| doc[:chunk_text] || doc[:text] || "" }
       
       # Rerank - returns array of {doc_id:, score:, text:}
       reranked = @reranker.rerank(query, texts)
@@ -311,11 +331,11 @@ module RubyRag
       # Map back to original documents with scores
       reranked.map do |result|
         doc_idx = result[:doc_id]
-        documents[doc_idx]
-      end.first(top_k)
+        unique_docs[doc_idx].merge(score: result[:score])
+      end.sort_by { |doc| -doc[:score] }.first(top_k)
     rescue => e
       puts "Warning: Reranking failed (#{e.message}), using original order"
-      documents.first(top_k)
+      unique_docs.first(top_k)
     end
     
     def prepare_context(documents, context_needed)
