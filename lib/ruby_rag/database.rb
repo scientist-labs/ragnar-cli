@@ -194,6 +194,15 @@ module RubyRag
       stats
     end
     
+    def get_all_documents_with_embeddings(limit: nil)
+      return [] unless dataset_exists?
+      
+      dataset = Lancelot::Dataset.open(@db_path)
+      all_docs = limit ? dataset.first(limit) : dataset.to_a
+      
+      all_docs.select { |doc| doc[:embedding] && !doc[:embedding].empty? }
+    end
+    
     def full_text_search(query, limit: 10)
       return [] unless dataset_exists?
       

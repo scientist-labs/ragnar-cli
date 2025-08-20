@@ -119,9 +119,8 @@ module RubyRag
         
         say "Loading #{stats[:with_embeddings]} documents...", :yellow
         
-        # TODO: Add method to database to get all embeddings and texts
-        # For now, we'll use a workaround
-        docs_with_embeddings = fetch_all_documents(database)
+        # Get all documents with embeddings
+        docs_with_embeddings = database.get_all_documents_with_embeddings
         
         if docs_with_embeddings.empty?
           say "Could not load documents from database. Please check your database.", :red
@@ -281,32 +280,75 @@ module RubyRag
       end
       
       say "\nFound #{topics.length} topics:", :green
-      say ""
       
-      topics.each_with_index do |topic, idx|
-        say "Topic #{idx + 1}: #{topic.label || 'Unlabeled'}", :cyan
-        say "  Size: #{topic.size} documents"
-        say "  Coherence: #{(topic.coherence * 100).round(1)}%" if topic.coherence > 0
-        say "  Top terms: #{topic.terms.first(8).join(', ')}" if topic.terms.any?
-        
-        if topic.representative_docs(k: 1).any?
-          preview = topic.representative_docs(k: 1).first
-          preview = preview[0..150] + "..." if preview.length > 150
-          say "  Sample: \"#{preview}\""
-        end
-        say ""
+      # Group topics by size for better visualization
+      large_topics = topics.select { |t| t.size >= 20 }
+      medium_topics = topics.select { |t| t.size >= 10 && t.size < 20 }
+      small_topics = topics.select { |t| t.size < 10 }
+      
+      if large_topics.any?
+        say "\n" + "─" * 40, :blue
+        say "MAJOR TOPICS (≥20 docs)", :blue
+        say "─" * 40, :blue
+        display_topic_group(large_topics, :cyan)
+      end
+      
+      if medium_topics.any?
+        say "\n" + "─" * 40, :yellow
+        say "MEDIUM TOPICS (10-19 docs)", :yellow
+        say "─" * 40, :yellow
+        display_topic_group(medium_topics, :yellow)
+      end
+      
+      if small_topics.any?
+        say "\n" + "─" * 40, :white
+        say "MINOR TOPICS (<10 docs)", :white
+        say "─" * 40, :white
+        display_topic_group(small_topics, :white)
       end
       
       # Summary statistics
       total_docs = topics.sum(&:size)
-      say "-" * 40, :yellow
-      say "Summary:", :green
-      say "  Total documents in topics: #{total_docs}"
+      say "\n" + "="*60, :green
+      say "SUMMARY STATISTICS", :green
+      say "="*60, :green
+      say "  Total topics: #{topics.length}"
+      say "  Documents in topics: #{total_docs}"
       say "  Average topic size: #{(total_docs.to_f / topics.length).round(1)}"
       
       if topics.any? { |t| t.coherence > 0 }
         avg_coherence = topics.map(&:coherence).sum / topics.length
         say "  Average coherence: #{(avg_coherence * 100).round(1)}%"
+      end
+      
+      # Distribution breakdown
+      say "\n  Size distribution:"
+      say "    Large (≥20): #{large_topics.length} topics, #{large_topics.sum(&:size)} docs"
+      say "    Medium (10-19): #{medium_topics.length} topics, #{medium_topics.sum(&:size)} docs"
+      say "    Small (<10): #{small_topics.length} topics, #{small_topics.sum(&:size)} docs"
+    end
+    
+    def display_topic_group(topics, color)
+      topics.sort_by { |t| -t.size }.each_with_index do |topic, idx|
+        say "\n#{topic.label || 'Unlabeled'} (#{topic.size} docs)", color
+        
+        # Show coherence as a bar
+        if topic.coherence > 0
+          coherence_pct = (topic.coherence * 100).round(0)
+          bar_length = (coherence_pct / 5).to_i
+          bar = "█" * bar_length + "░" * (20 - bar_length)
+          say "  Coherence: #{bar} #{coherence_pct}%"
+        end
+        
+        # Compact term display
+        say "  Terms: #{topic.terms.first(6).join(' • ')}" if topic.terms.any?
+        
+        # Short sample
+        if topic.representative_docs(k: 1).any?
+          preview = topic.representative_docs(k: 1).first
+          preview = preview[0..100] + "..." if preview.length > 100
+          say "  \"#{preview}\"", :white
+        end
       end
     end
     

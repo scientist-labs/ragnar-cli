@@ -131,8 +131,7 @@ module RubyRag
         umap = ClusterKit::Dimensionality::UMAP.new(
           n_components: @n_components,
           n_neighbors: 15,
-          min_dist: 0.0,  # Allow tight clusters for topic modeling
-          metric: 'cosine'
+          random_seed: 42  # For reproducibility
         )
         
         # Convert to format UMAP expects
