@@ -95,6 +95,75 @@ module RubyRag
       end
     end
     
+    desc "topics", "Extract and display topics from indexed documents"
+    option :db_path, type: :string, default: RubyRag::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :min_cluster_size, type: :numeric, default: 5, desc: "Minimum documents per topic"
+    option :method, type: :string, default: "hybrid", desc: "Labeling method: fast, quality, or hybrid"
+    option :export, type: :string, desc: "Export topics to file (json or html)"
+    option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing"
+    def topics
+      require_relative 'topic_modeling'
+      
+      say "Extracting topics from indexed documents...", :green
+      
+      # Load embeddings and documents from database
+      database = Database.new(options[:db_path])
+      
+      begin
+        # Get all documents with embeddings
+        stats = database.get_stats
+        if stats[:with_embeddings] == 0
+          say "No documents with embeddings found. Please index some documents first.", :red
+          exit 1
+        end
+        
+        say "Loading #{stats[:with_embeddings]} documents...", :yellow
+        
+        # TODO: Add method to database to get all embeddings and texts
+        # For now, we'll use a workaround
+        docs_with_embeddings = fetch_all_documents(database)
+        
+        if docs_with_embeddings.empty?
+          say "Could not load documents from database. Please check your database.", :red
+          exit 1
+        end
+        
+        embeddings = docs_with_embeddings.map { |d| d[:embedding] }
+        documents = docs_with_embeddings.map { |d| d[:chunk_text] }
+        metadata = docs_with_embeddings.map { |d| { file_path: d[:file_path], chunk_index: d[:chunk_index] } }
+        
+        say "Loaded #{embeddings.length} embeddings and #{documents.length} documents", :yellow if options[:verbose]
+        
+        # Initialize topic modeling engine
+        engine = RubyRag::TopicModeling::Engine.new(
+          min_cluster_size: options[:min_cluster_size],
+          labeling_method: options[:method].to_sym,
+          verbose: options[:verbose]
+        )
+        
+        # Extract topics
+        say "Clustering documents...", :yellow
+        topics = engine.fit(
+          embeddings: embeddings,
+          documents: documents,
+          metadata: metadata
+        )
+        
+        # Display results
+        display_topics(topics)
+        
+        # Export if requested
+        if options[:export]
+          export_topics(topics, options[:export])
+        end
+        
+      rescue => e
+        say "Error extracting topics: #{e.message}", :red
+        say e.backtrace.first(5).join("\n") if options[:verbose]
+        exit 1
+      end
+    end
+    
     desc "query QUESTION", "Query the RAG system"
     option :db_path, type: :string, default: RubyRag::DEFAULT_DB_PATH, desc: "Path to Lance database"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
@@ -171,6 +240,225 @@ module RubyRag
     desc "version", "Show version"
     def version
       say "RubyRag v#{RubyRag::VERSION}"
+    end
+    
+    private
+    
+    def fetch_all_documents(database)
+      # Temporary workaround to get all documents
+      # In production, we'd add a proper method to Database class
+      # For now, do a large search to get all docs
+      
+      # Get stats to determine embedding size
+      stats = database.get_stats
+      embedding_dims = stats[:embedding_dims] || 768
+      
+      # Generate a dummy embedding to search with
+      dummy_embedding = Array.new(embedding_dims, 0.0)
+      
+      # Search for a large number to get all docs
+      results = database.search_similar(dummy_embedding, k: 10000)
+      
+      # Return all results that have valid embeddings and text
+      results.select do |r| 
+        r[:embedding] && !r[:embedding].empty? && 
+        r[:chunk_text] && !r[:chunk_text].empty?
+      end
+    rescue => e
+      say "Error loading documents: #{e.message}", :red
+      say e.backtrace.first(3).join("\n") if options[:verbose]
+      []
+    end
+    
+    def display_topics(topics)
+      say "\n" + "="*60, :green
+      say "Topic Analysis Results", :cyan
+      say "="*60, :green
+      
+      if topics.empty?
+        say "No topics found. Try adjusting min_cluster_size.", :yellow
+        return
+      end
+      
+      say "\nFound #{topics.length} topics:", :green
+      say ""
+      
+      topics.each_with_index do |topic, idx|
+        say "Topic #{idx + 1}: #{topic.label || 'Unlabeled'}", :cyan
+        say "  Size: #{topic.size} documents"
+        say "  Coherence: #{(topic.coherence * 100).round(1)}%" if topic.coherence > 0
+        say "  Top terms: #{topic.terms.first(8).join(', ')}" if topic.terms.any?
+        
+        if topic.representative_docs(k: 1).any?
+          preview = topic.representative_docs(k: 1).first
+          preview = preview[0..150] + "..." if preview.length > 150
+          say "  Sample: \"#{preview}\""
+        end
+        say ""
+      end
+      
+      # Summary statistics
+      total_docs = topics.sum(&:size)
+      say "-" * 40, :yellow
+      say "Summary:", :green
+      say "  Total documents in topics: #{total_docs}"
+      say "  Average topic size: #{(total_docs.to_f / topics.length).round(1)}"
+      
+      if topics.any? { |t| t.coherence > 0 }
+        avg_coherence = topics.map(&:coherence).sum / topics.length
+        say "  Average coherence: #{(avg_coherence * 100).round(1)}%"
+      end
+    end
+    
+    def export_topics(topics, format)
+      case format.downcase
+      when 'json'
+        export_topics_json(topics)
+      when 'html'
+        export_topics_html(topics)
+      else
+        say "Unknown export format: #{format}. Use 'json' or 'html'.", :red
+      end
+    end
+    
+    def export_topics_json(topics)
+      data = {
+        generated_at: Time.now.iso8601,
+        topics: topics.map(&:to_h),
+        summary: {
+          total_topics: topics.length,
+          total_documents: topics.sum(&:size),
+          average_size: (topics.sum(&:size).to_f / topics.length).round(1)
+        }
+      }
+      
+      filename = "topics_#{Time.now.strftime('%Y%m%d_%H%M%S')}.json"
+      File.write(filename, JSON.pretty_generate(data))
+      say "Topics exported to: #{filename}", :green
+    end
+    
+    def export_topics_html(topics)
+      # Generate self-contained HTML with D3.js visualization
+      html = generate_topic_visualization_html(topics)
+      
+      filename = "topics_#{Time.now.strftime('%Y%m%d_%H%M%S')}.html"
+      File.write(filename, html)
+      say "Topics visualization exported to: #{filename}", :green
+      
+      # Offer to open in browser
+      if yes?("Open in browser?")
+        system("open #{filename}") rescue nil  # macOS
+        system("xdg-open #{filename}") rescue nil  # Linux
+      end
+    end
+    
+    def generate_topic_visualization_html(topics)
+      # Convert topics to JSON for D3.js
+      topics_json = topics.map do |topic|
+        {
+          id: topic.id,
+          label: topic.label || "Topic #{topic.id}",
+          size: topic.size,
+          terms: topic.terms.first(10),
+          coherence: topic.coherence,
+          samples: topic.representative_docs(k: 2).map { |d| d[0..200] }
+        }
+      end.to_json
+      
+      # HTML template with embedded D3.js
+      <<~HTML
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Topic Visualization</title>
+          <script src="https://d3js.org/d3.v7.min.js"></script>
+          <style>
+            body { font-family: -apple-system, sans-serif; margin: 20px; }
+            #viz { width: 100%; height: 500px; border: 1px solid #ddd; }
+            .topic { cursor: pointer; }
+            .topic:hover { opacity: 0.8; }
+            #details { margin-top: 20px; padding: 15px; background: #f5f5f5; }
+            .term { display: inline-block; margin: 5px; padding: 5px 10px; background: #e0e0e0; border-radius: 3px; }
+          </style>
+        </head>
+        <body>
+          <h1>Topic Analysis Results</h1>
+          <div id="viz"></div>
+          <div id="details">Click on a topic to see details</div>
+          
+          <script>
+            const data = #{topics_json};
+            
+            // Create bubble chart
+            const width = document.getElementById('viz').clientWidth;
+            const height = 500;
+            
+            const svg = d3.select("#viz")
+              .append("svg")
+              .attr("width", width)
+              .attr("height", height);
+            
+            // Create scale for bubble sizes
+            const sizeScale = d3.scaleSqrt()
+              .domain([0, d3.max(data, d => d.size)])
+              .range([10, 50]);
+            
+            // Create color scale
+            const colorScale = d3.scaleSequential(d3.interpolateViridis)
+              .domain([0, 1]);
+            
+            // Create force simulation
+            const simulation = d3.forceSimulation(data)
+              .force("x", d3.forceX(width / 2).strength(0.05))
+              .force("y", d3.forceY(height / 2).strength(0.05))
+              .force("collide", d3.forceCollide(d => sizeScale(d.size) + 2));
+            
+            // Create bubbles
+            const bubbles = svg.selectAll(".topic")
+              .data(data)
+              .enter().append("g")
+              .attr("class", "topic");
+            
+            bubbles.append("circle")
+              .attr("r", d => sizeScale(d.size))
+              .attr("fill", d => colorScale(d.coherence))
+              .attr("stroke", "#fff")
+              .attr("stroke-width", 2);
+            
+            bubbles.append("text")
+              .text(d => d.label)
+              .attr("text-anchor", "middle")
+              .attr("dy", ".3em")
+              .style("font-size", d => Math.min(sizeScale(d.size) / 3, 14) + "px");
+            
+            // Add click handler
+            bubbles.on("click", function(event, d) {
+              showDetails(d);
+            });
+            
+            // Update positions
+            simulation.on("tick", () => {
+              bubbles.attr("transform", d => `translate(${d.x},${d.y})`);
+            });
+            
+            // Show topic details
+            function showDetails(topic) {
+              const details = document.getElementById('details');
+              details.innerHTML = `
+                <h2>${topic.label}</h2>
+                <p><strong>Documents:</strong> ${topic.size}</p>
+                <p><strong>Coherence:</strong> ${(topic.coherence * 100).toFixed(1)}%</p>
+                <p><strong>Top Terms:</strong></p>
+                <div>${topic.terms.map(t => `<span class="term">${t}</span>`).join('')}</div>
+                <p><strong>Sample Documents:</strong></p>
+                ${topic.samples.map(s => `<p style="font-size: 0.9em; color: #666;">"${s}..."</p>`).join('')}
+              `;
+            }
+          </script>
+        </body>
+        </html>
+      HTML
     end
   end
 end
