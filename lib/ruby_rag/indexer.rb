@@ -30,18 +30,24 @@ module RubyRag
       puts "Found #{files.size} file(s) to process"
       
       file_progress = TTY::ProgressBar.new(
-        "Processing files [:bar] :percent :current/:total",
+        "Processing [:bar] :percent :current/:total - :filename",
         total: files.size,
         bar_format: :block,
-        width: 30
+        width: 30,
+        clear: true
       )
       
       files.each do |file_path|
         begin
-          process_file(file_path, stats)
+          # Update the progress bar with current filename
+          filename = File.basename(file_path)
+          filename = filename[0..27] + "..." if filename.length > 30
+          file_progress.advance(0, filename: filename)
+          
+          process_file(file_path, stats, file_progress)
           stats[:files_processed] += 1
         rescue => e
-          puts "\nError processing #{file_path}: #{e.message}"
+          file_progress.log "Error: #{File.basename(file_path)} - #{e.message}"
           stats[:errors] += 1
         ensure
           file_progress.advance
@@ -70,15 +76,13 @@ module RubyRag
       end
     end
     
-    def process_file(file_path, stats)
-      puts "\nProcessing: #{File.basename(file_path)}"
-      
+    def process_file(file_path, stats, progress_bar = nil)
       # Extract text using parser-core
       begin
         text = extract_text_from_file(file_path)
         
         if text.nil? || text.strip.empty?
-          puts "  No text extracted (file may be empty or unsupported)"
+          progress_bar.log("  Skipped: #{File.basename(file_path)} (empty or unsupported)") if progress_bar
           return
         end
         
@@ -93,30 +97,29 @@ module RubyRag
         chunks = @chunker.chunk_text(text, metadata)
         
         if chunks.empty?
-          puts "  No chunks created (text too short)"
+          progress_bar.log("  Skipped: #{File.basename(file_path)} (text too short)") if progress_bar
           return
         end
         
-        puts "  Extracted text (#{text.size} chars) and created #{chunks.size} chunks"
-        
         # Process chunks and create documents
-        chunk_count = process_chunks(chunks, file_path)
+        chunk_count = process_chunks(chunks, file_path, progress_bar)
         stats[:chunks_created] += chunk_count
       rescue => e
-        puts "  Error processing file: #{e.message}"
-        puts "  Backtrace: #{e.backtrace.first(3).join("\n    ")}"
+        if progress_bar
+          progress_bar.log("  Error processing file: #{e.message}")
+          progress_bar.log("  Backtrace: #{e.backtrace.first}")
+        end
         raise e
       end
     end
     
-    def process_chunks(chunks, file_path)
+    def process_chunks(chunks, file_path, progress_bar = nil)
       return 0 if chunks.empty?
       
       # Extract texts for embedding
       texts = chunks.map { |c| c[:text] }
       
-      # Generate embeddings
-      puts "  Generating embeddings..."
+      # Generate embeddings (silently)
       embeddings = @embedder.embed_batch(texts, show_progress: false)
       
       # Prepare documents for database
@@ -143,7 +146,7 @@ module RubyRag
       # Store in database
       if documents.any?
         @database.add_documents(documents)
-        puts "  Stored #{documents.size} chunks in database"
+        # Successfully stored chunks (silent to preserve progress bar)
       end
       
       documents.size
