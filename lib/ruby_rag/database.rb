@@ -69,8 +69,20 @@ module RubyRag
       
       dataset = Lancelot::Dataset.open(@db_path)
       
-      # Get all existing documents
-      all_docs = dataset.to_a
+      # Get all existing documents and safely extract their data
+      all_docs = dataset.to_a.map do |doc|
+        # Safely extract fields we know about
+        {
+          id: doc[:id],
+          content: doc[:content],
+          chunk_text: doc[:chunk_text],
+          file_path: doc[:file_path],
+          chunk_index: doc[:chunk_index],
+          embedding: doc[:embedding],
+          metadata: doc[:metadata],
+          reduced_embedding: doc[:reduced_embedding]
+        }
+      end
       
       # Create a map for quick lookup
       update_map = updates.each_with_object({}) do |update, map|

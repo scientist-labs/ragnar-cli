@@ -1,4 +1,10 @@
 PATH
+  remote: ../lancelot
+  specs:
+    lancelot (0.3.1)
+      rb_sys (~> 0.9)
+
+PATH
   remote: ../parser-core-ruby
   specs:
     parser-core-ruby (0.1.0)
@@ -10,8 +16,6 @@ GEM
     baran (0.2.1)
     clusterkit (0.1.0.pre.2)
     diff-lcs (1.6.2)
-    lancelot (0.3.1)
-      rb_sys (~> 0.9)
     rake (13.3.0)
     rake-compiler-dock (1.9.1)
     rb_sys (0.9.117)
@@ -50,7 +54,7 @@ PLATFORMS
 DEPENDENCIES
   baran (~> 0.2)
   clusterkit (= 0.1.0.pre.2)
-  lancelot
+  lancelot!
   parser-core-ruby!
   rake (~> 13.0)
   red-candle
