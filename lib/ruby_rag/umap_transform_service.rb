@@ -1,4 +1,4 @@
-require 'annembed'
+require 'clusterkit'
 
 module RubyRag
   class UmapTransformService
@@ -52,7 +52,7 @@ module RubyRag
         raise "UMAP model not found at #{model_path}. Please train a model first."
       end
       
-      @umap_model = AnnEmbed::UMAP.load(model_path)
+      @umap_model = ClusterKit::Dimensionality::UMAP.load_model(model_path)
       puts "UMAP model loaded for query transformation"
     end
     

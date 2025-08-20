@@ -1,7 +1,7 @@
 require "thor"
 require "red-candle"
 require "lancelot"
-require "annembed"
+require "clusterkit"
 require "baran"
 require "tty-progressbar"
 require "securerandom"

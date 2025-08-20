@@ -1,3 +1,5 @@
+require 'json'
+
 module RubyRag
   class UmapProcessor
     attr_reader :database, :model_path
@@ -48,8 +50,8 @@ module RubyRag
         puts "     Consider indexing more documents for better results."
       end
       
-      # Convert to matrix format for AnnEmbed
-      # AnnEmbed expects a 2D array or Numo::NArray
+      # Convert to matrix format for ClusterKit
+      # ClusterKit expects a 2D array or Numo::NArray
       embedding_matrix = embeddings
       original_dims = embeddings.first.size
       
@@ -59,7 +61,7 @@ module RubyRag
       puts "  Neighbors: #{n_neighbors}"
       puts "  Min distance: #{min_dist}"
       
-      # Use the simple AnnEmbed.umap method
+      # Use the simple ClusterKit.umap method
       progressbar = TTY::ProgressBar.new(
         "Training UMAP [:bar] :percent",
         total: 100,
@@ -67,7 +69,7 @@ module RubyRag
         width: 30
       )
       
-      # Start progress in background (AnnEmbed doesn't provide callbacks)
+      # Start progress in background (ClusterKit doesn't provide callbacks)
       progress_thread = Thread.new do
         100.times do
           sleep(0.05)
@@ -77,7 +79,7 @@ module RubyRag
       end
       
       # Perform the actual training using the class-based API
-      @umap_instance = AnnEmbed::UMAP.new(
+      @umap_instance = ClusterKit::Dimensionality::UMAP.new(
         n_components: n_components,
         n_neighbors: n_neighbors
       )
@@ -181,12 +183,12 @@ module RubyRag
       return unless @umap_instance && @reduced_embeddings
       
       # Save the trained UMAP model for transforming new queries
-      @umap_instance.save(@model_path)
+      @umap_instance.save_model(@model_path)
       puts "UMAP model saved to: #{@model_path}"
       
       # Also cache the reduced embeddings separately for the apply method
       embeddings_path = @model_path.sub(/\.bin$/, '_embeddings.json')
-      AnnEmbed::UMAP.export_data(@reduced_embeddings, embeddings_path)
+      ClusterKit::Dimensionality::UMAP.save_data(@reduced_embeddings, embeddings_path)
       puts "Reduced embeddings cached to: #{embeddings_path}"
     end
     
@@ -199,7 +201,7 @@ module RubyRag
         raise "Cached embeddings not found at #{embeddings_path}. Please train a model first."
       end
       
-      @reduced_embeddings = AnnEmbed::UMAP.import_data(embeddings_path)
+      @reduced_embeddings = ClusterKit::Dimensionality::UMAP.load_data(embeddings_path)
       puts "Cached embeddings loaded from: #{embeddings_path}"
       @reduced_embeddings
     end
@@ -210,7 +212,7 @@ module RubyRag
         raise "UMAP model not found at #{@model_path}. Please train a model first."
       end
       
-      @umap_instance ||= AnnEmbed::UMAP.load(@model_path)
+      @umap_instance ||= ClusterKit::Dimensionality::UMAP.load_model(@model_path)
       puts "UMAP model loaded from: #{@model_path}"
       @umap_instance
     end

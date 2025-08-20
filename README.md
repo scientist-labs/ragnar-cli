@@ -7,7 +7,7 @@ A complete Ruby implementation of Retrieval-Augmented Generation (RAG) pipeline 
 RubyRag provides a production-ready RAG pipeline for Ruby applications, integrating:
 - **red-candle**: LLM inference, embeddings, and reranking
 - **lancelot**: Vector database with Lance columnar storage  
-- **annembed-ruby**: UMAP dimensionality reduction
+- **clusterkit**: UMAP dimensionality reduction and clustering
 - **baran**: Text chunking and splitting
 
 ## Architecture
@@ -409,7 +409,7 @@ MIT License - see LICENSE file for details
 This project integrates several excellent Ruby gems:
 - [red-candle](https://github.com/red-candle) - Ruby ML/LLM toolkit
 - [lancelot](https://github.com/lancelot) - Lance database bindings
-- [annembed-ruby](https://github.com/annembed-ruby) - UMAP implementation
+- [clusterkit](https://github.com/cpetersen/clusterkit) - UMAP and clustering implementation
 - [baran](https://github.com/baran) - Text splitting utilities
 
 ## Roadmap
