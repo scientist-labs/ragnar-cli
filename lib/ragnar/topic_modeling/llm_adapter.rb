@@ -1,5 +1,5 @@
 # Adapter to allow different LLM backends (red-candle, remote APIs, etc.)
-module RubyRag
+module Ragnar
   module TopicModeling
     class LLMAdapter
       # Factory method to create appropriate LLM client
@@ -66,9 +66,9 @@ module RubyRag
       
       def load_or_create_llm
         # Check if already loaded in ruby-rag
-        if defined?(RubyRag::LLMManager)
+        if defined?(Ragnar::LLMManager)
           begin
-            return RubyRag::LLMManager.instance.get_llm(@model)
+            return Ragnar::LLMManager.instance.get_llm(@model)
           rescue
             # Fall through to create new
           end

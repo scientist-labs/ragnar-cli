@@ -1,6 +1,6 @@
 require 'set'
 
-module RubyRag
+module Ragnar
   module TopicModeling
     class TermExtractor
       # Common English stop words to filter out

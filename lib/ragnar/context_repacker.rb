@@ -1,4 +1,4 @@
-module RubyRag
+module Ragnar
   class ContextRepacker
     # Repack retrieved documents into optimized context for LLM
     # This reduces redundancy and organizes information better

@@ -1,5 +1,5 @@
 # Separate strategy classes for different labeling approaches
-module RubyRag
+module Ragnar
   module TopicModeling
     module LabelingStrategies
       

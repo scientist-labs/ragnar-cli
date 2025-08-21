@@ -1,8 +1,8 @@
-module RubyRag
+module Ragnar
   class Chunker
     attr_reader :chunk_size, :chunk_overlap
     
-    def initialize(chunk_size: RubyRag::DEFAULT_CHUNK_SIZE, chunk_overlap: RubyRag::DEFAULT_CHUNK_OVERLAP)
+    def initialize(chunk_size: Ragnar::DEFAULT_CHUNK_SIZE, chunk_overlap: Ragnar::DEFAULT_CHUNK_OVERLAP)
       @chunk_size = chunk_size
       @chunk_overlap = chunk_overlap
       # Use RecursiveCharacterTextSplitter for better chunking
@@ -88,8 +88,8 @@ module RubyRag
       # Future enhancement: Use more sophisticated chunking with semantic boundaries
       # Could use sentence embeddings to find natural break points
       Baran::RecursiveCharacterTextSplitter.new(
-        chunk_size: RubyRag::DEFAULT_CHUNK_SIZE,
-        chunk_overlap: RubyRag::DEFAULT_CHUNK_OVERLAP,
+        chunk_size: Ragnar::DEFAULT_CHUNK_SIZE,
+        chunk_overlap: Ragnar::DEFAULT_CHUNK_OVERLAP,
         separators: ["\n\n", "\n", ". ", " ", ""]
       )
     end

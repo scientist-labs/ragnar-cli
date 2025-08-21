@@ -1,4 +1,4 @@
-module RubyRag
+module Ragnar
   # Singleton manager for LLM instances to avoid reloading models
   class LLMManager
     include Singleton

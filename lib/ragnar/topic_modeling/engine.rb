@@ -1,6 +1,6 @@
 require 'json'
 
-module RubyRag
+module Ragnar
   module TopicModeling
     class Engine
       attr_reader :topics, :clusterer, :term_extractor

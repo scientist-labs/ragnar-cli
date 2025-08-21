@@ -1,4 +1,4 @@
-module RubyRag
+module Ragnar
   class Database
     attr_reader :db_path, :table_name
     

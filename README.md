@@ -1,10 +1,10 @@
-# RubyRag
+# Ragnar
 
 A complete Ruby implementation of Retrieval-Augmented Generation (RAG) pipeline using native Ruby ML/NLP gems.
 
 ## Overview
 
-RubyRag provides a production-ready RAG pipeline for Ruby applications, integrating:
+Ragnar provides a production-ready RAG pipeline for Ruby applications, integrating:
 - **red-candle**: LLM inference, embeddings, and reranking
 - **lancelot**: Vector database with Lance columnar storage  
 - **clusterkit**: UMAP dimensionality reduction and clustering
@@ -54,7 +54,7 @@ sequenceDiagram
     participant Embedder
     participant Database
     
-    User->>CLI: ruby-rag index ./documents
+    User->>CLI: ragnar index ./documents
     CLI->>Indexer: index_path(path)
     
     loop For each file
@@ -121,8 +121,20 @@ flowchart TB
 
 ## Installation
 
+### As a Gem
+
 ```bash
+gem install ragnar
+```
+
+### From Source
+
+```bash
+git clone https://github.com/yourusername/ragnar.git
+cd ragnar
 bundle install
+gem build ragnar.gemspec
+gem install ./ragnar-*.gem
 ```
 
 ## Quick Start
@@ -131,10 +143,10 @@ bundle install
 
 ```bash
 # Index a directory of text files
-./bin/ruby-rag index ./documents
+ragnar index ./documents
 
 # Index with custom settings
-./bin/ruby-rag index ./documents \
+ragnar index ./documents \
   --chunk-size 1000 \
   --chunk-overlap 100
 ```
@@ -145,33 +157,33 @@ Reduce embedding dimensions for faster search:
 
 ```bash
 # Train UMAP model (auto-adjusts parameters based on data)
-./bin/ruby-rag train-umap \
+ragnar train-umap \
   --n-components 50 \
   --n-neighbors 15
 
 # Apply to all embeddings
-./bin/ruby-rag apply-umap
+ragnar apply-umap
 ```
 
 ### 3. Query the System
 
 ```bash
 # Basic query
-./bin/ruby-rag query "What is the main purpose of this project?"
+ragnar query "What is the main purpose of this project?"
 
 # Verbose mode shows all intermediate processing steps
-./bin/ruby-rag query "How does the chunking process work?" --verbose
+ragnar query "How does the chunking process work?" --verbose
 # Or use short form
-./bin/ruby-rag query "How does the chunking process work?" -v
+ragnar query "How does the chunking process work?" -v
 
 # JSON output for programmatic use
-./bin/ruby-rag query "Explain the embedding model" --json
+ragnar query "Explain the embedding model" --json
 
 # Adjust number of retrieved documents
-./bin/ruby-rag query "What are the key features?" --top-k 5
+ragnar query "What are the key features?" --top-k 5
 
 # Combine options for detailed analysis
-./bin/ruby-rag query "Compare Ruby with Python" -v --top-k 5
+ragnar query "Compare Ruby with Python" -v --top-k 5
 ```
 
 #### Verbose Mode Output
@@ -188,7 +200,7 @@ When using `--verbose` or `-v`, you'll see:
 ### 4. Check Statistics
 
 ```bash
-./bin/ruby-rag stats
+ragnar stats
 ```
 
 ## Features
@@ -222,7 +234,7 @@ When using `--verbose` or `-v`, you'll see:
 ### Default Settings
 
 ```ruby
-DEFAULT_DB_PATH = "rag_database"
+DEFAULT_DB_PATH = "ragnar_database"
 DEFAULT_CHUNK_SIZE = 512
 DEFAULT_CHUNK_OVERLAP = 50
 DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-en"
@@ -249,10 +261,10 @@ DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-en"
 ### Programmatic API
 
 ```ruby
-require 'ruby_rag'
+require 'ragnar'
 
 # Initialize components
-indexer = RubyRag::Indexer.new(
+indexer = Ragnar::Indexer.new(
   db_path: "my_database",
   chunk_size: 1000
 )
@@ -261,7 +273,7 @@ indexer = RubyRag::Indexer.new(
 stats = indexer.index_path("./documents")
 
 # Query the system
-processor = RubyRag::QueryProcessor.new(db_path: "my_database")
+processor = Ragnar::QueryProcessor.new(db_path: "my_database")
 result = processor.query(
   "What is Ruby?",
   top_k: 5,
@@ -275,7 +287,7 @@ puts "Confidence: #{result[:confidence]}%"
 ### Custom Chunking Strategies
 
 ```ruby
-chunker = RubyRag::Chunker.new(
+chunker = Ragnar::Chunker.new(
   chunk_size: 1000,
   chunk_overlap: 200,
   separators: ["\n\n", "\n", ". ", " "]
@@ -288,7 +300,7 @@ chunks = chunker.chunk_text(document_text)
 
 ```ruby
 # For small datasets (<100 documents)
-processor = RubyRag::UmapProcessor.new
+processor = Ragnar::UmapProcessor.new
 processor.train(
   n_components: 10,  # Fewer components
   n_neighbors: 5,    # Fewer neighbors
@@ -359,7 +371,7 @@ bundle install
 bundle exec rspec
 
 # Build gem
-gem build ruby-rag.gemspec
+gem build ragnar.gemspec
 ```
 
 ## Architecture Details

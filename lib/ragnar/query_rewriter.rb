@@ -1,4 +1,4 @@
-module RubyRag
+module Ragnar
   class QueryRewriter
     def initialize(llm_manager: nil)
       @llm_manager = llm_manager || LLMManager.instance

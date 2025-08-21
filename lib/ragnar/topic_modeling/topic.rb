@@ -1,4 +1,4 @@
-module RubyRag
+module Ragnar
   module TopicModeling
     class Topic
       attr_reader :id, :document_indices, :documents, :embeddings, :metadata

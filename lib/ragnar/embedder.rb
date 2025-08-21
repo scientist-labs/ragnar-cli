@@ -1,8 +1,8 @@
-module RubyRag
+module Ragnar
   class Embedder
     attr_reader :model, :model_name
     
-    def initialize(model_name: RubyRag::DEFAULT_EMBEDDING_MODEL)
+    def initialize(model_name: Ragnar::DEFAULT_EMBEDDING_MODEL)
       @model_name = model_name
       @model = load_model(model_name)
     end

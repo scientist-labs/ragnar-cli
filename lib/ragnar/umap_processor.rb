@@ -1,16 +1,16 @@
 require 'json'
 
-module RubyRag
+module Ragnar
   class UmapProcessor
     attr_reader :database, :model_path
     
-    def initialize(db_path: RubyRag::DEFAULT_DB_PATH, model_path: "umap_model.bin")
+    def initialize(db_path: Ragnar::DEFAULT_DB_PATH, model_path: "umap_model.bin")
       @database = Database.new(db_path)
       @model_path = model_path
       @umap_model = nil
     end
     
-    def train(n_components: RubyRag::DEFAULT_REDUCED_DIMENSIONS, n_neighbors: 15, min_dist: 0.1)
+    def train(n_components: Ragnar::DEFAULT_REDUCED_DIMENSIONS, n_neighbors: 15, min_dist: 0.1)
       puts "Loading embeddings from database..."
       
       # Get all embeddings

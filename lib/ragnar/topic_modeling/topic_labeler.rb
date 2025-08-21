@@ -1,6 +1,6 @@
 require_relative 'labeling_strategies'
 
-module RubyRag
+module Ragnar
   module TopicModeling
     class TopicLabeler
       attr_reader :strategy

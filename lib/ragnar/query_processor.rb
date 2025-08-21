@@ -3,11 +3,11 @@ require 'singleton'
 require 'set'
 require 'digest'
 
-module RubyRag
+module Ragnar
   class QueryProcessor
     attr_reader :database, :embedder, :rewriter, :reranker
     
-    def initialize(db_path: RubyRag::DEFAULT_DB_PATH)
+    def initialize(db_path: Ragnar::DEFAULT_DB_PATH)
       @database = Database.new(db_path)
       @embedder = Embedder.new
       @llm_manager = LLMManager.instance

@@ -1,6 +1,6 @@
 require 'clusterkit'
 
-module RubyRag
+module Ragnar
   class UmapTransformService
     include Singleton
     

@@ -7,7 +7,7 @@ require_relative 'topic_modeling/metrics'
 require_relative 'topic_modeling/topic_labeler'
 require_relative 'topic_modeling/engine'
 
-module RubyRag
+module Ragnar
   module TopicModeling
     
     # Convenience method to create a new topic modeling engine

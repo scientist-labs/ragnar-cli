@@ -1,4 +1,4 @@
-module RubyRag
+module Ragnar
   module TopicModeling
     module Metrics
       extend self
