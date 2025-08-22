@@ -43,7 +43,7 @@ documents = [
 puts "Testing topic modeling with #{documents.length} synthetic documents..."
 
 # Generate embeddings using the embedder
-embedder = RubyRag::Embedder.new
+embedder = Ragnar::Embedder.new
 print "Generating embeddings"
 embeddings = embedder.embed_batch(documents, show_progress: false)
 puts "\nGenerated #{embeddings.length} embeddings"
@@ -54,7 +54,7 @@ puts "\nGenerated #{embeddings.length} embeddings"
   puts "Testing with method: #{method}"
   puts "="*60
   
-  engine = RubyRag::TopicModeling::Engine.new(
+  engine = Ragnar::TopicModeling::Engine.new(
     min_cluster_size: 2,  # Small value for test data
     min_samples: 1,       # Small value for test data
     labeling_method: method,

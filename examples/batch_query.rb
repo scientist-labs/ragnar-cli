@@ -2,11 +2,11 @@
 
 require 'bundler/setup'
 $LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
-require 'ruby_rag'
+require 'ragnar'
 require 'benchmark'
 
 # Initialize the query processor
-processor = RubyRag::QueryProcessor.new
+processor = Ragnar::QueryProcessor.new
 
 queries = [
   "What is Ruby?",
