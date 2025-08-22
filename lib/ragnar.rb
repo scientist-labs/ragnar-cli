@@ -34,6 +34,3 @@ require_relative "ragnar/umap_transform_service"
 require_relative "ragnar/query_processor"
 require_relative "ragnar/topic_modeling"
 require_relative "ragnar/cli"
-
-# Keep backward compatibility
-RubyRag = Ragnar

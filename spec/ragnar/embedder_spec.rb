@@ -64,7 +64,7 @@ RSpec.describe Ragnar::Embedder do
         "Third sentence"
       ]
       
-      embeddings = embedder.embed_batch(texts)
+      embeddings = embedder.embed_batch(texts, show_progress: false)
       
       expect(embeddings).to be_an(Array)
       expect(embeddings.size).to eq(texts.size)
@@ -75,14 +75,14 @@ RSpec.describe Ragnar::Embedder do
     end
 
     it "handles empty array" do
-      embeddings = embedder.embed_batch([])
+      embeddings = embedder.embed_batch([], show_progress: false)
       
       expect(embeddings).to eq([])
     end
 
     it "handles single text in batch" do
       texts = ["Single text"]
-      embeddings = embedder.embed_batch(texts)
+      embeddings = embedder.embed_batch(texts, show_progress: false)
       
       expect(embeddings.size).to eq(1)
       expect(embeddings.first).to be_an(Array)
@@ -90,7 +90,7 @@ RSpec.describe Ragnar::Embedder do
 
     it "maintains order of texts" do
       texts = ["AAA", "BBB", "CCC"]
-      embeddings = embedder.embed_batch(texts)
+      embeddings = embedder.embed_batch(texts, show_progress: false)
       
       # Verify each text gets its own embedding in order
       expect(embeddings.size).to eq(3)

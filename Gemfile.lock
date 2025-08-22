@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    ragnar (0.1.0)
+    ragnar-cli (0.1.0.pre.1)
       baran (~> 0.2)
       clusterkit (~> 0.1.0.pre.2)
       lancelot (~> 0.3, >= 0.3.2)
@@ -89,7 +89,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  ragnar!
+  ragnar-cli!
   rake (~> 13.0)
   rspec (~> 3.0)
   rubocop (~> 1.21)

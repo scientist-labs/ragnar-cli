@@ -1,4 +1,4 @@
-# Ragnar
+<img src="/docs/assets/ragnar-wide.png" alt="ragnar" height="80px">
 
 A complete Ruby implementation of Retrieval-Augmented Generation (RAG) pipeline using native Ruby ML/NLP gems.
 

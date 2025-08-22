@@ -3,7 +3,7 @@
 require_relative "lib/ragnar/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "ragnar"
+  spec.name = "ragnar-cli"
   spec.version = Ragnar::VERSION
   spec.authors = ["Chris Petersen"]
   spec.email = ["chris@example.com"]
