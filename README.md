@@ -6,7 +6,7 @@ A complete Ruby implementation of Retrieval-Augmented Generation (RAG) pipeline 
 
 Ragnar provides a production-ready RAG pipeline for Ruby applications, integrating:
 - **red-candle**: LLM inference, embeddings, and reranking
-- **lancelot**: Vector database with Lance columnar storage  
+- **lancelot**: Vector database with Lance columnar storage
 - **clusterkit**: UMAP dimensionality reduction and clustering
 - **baran**: Text chunking and splitting
 
@@ -23,7 +23,7 @@ graph TB
         D --> E[UMAP Training<br/>annembed]
         E --> F[Reduced Embeddings]
     end
-    
+
     subgraph "Query Pipeline"
         LLMCache[LLM Manager<br/>Cached Instance]
         Q[User Query] --> QR[Query Rewriter<br/>red-candle LLM]
@@ -34,11 +34,11 @@ graph TB
         RR --> RP[Context Repacker<br/>Deduplication & Organization]
         RP --> LLM[Response Generation<br/>red-candle LLM]
         LLM --> R[Answer]
-        
+
         LLMCache -.-> QR
         LLMCache -.-> LLM
     end
-    
+
     D -.-> VS
     F -.-> VS
 ```
@@ -53,22 +53,22 @@ sequenceDiagram
     participant Chunker
     participant Embedder
     participant Database
-    
+
     User->>CLI: ragnar index ./documents
     CLI->>Indexer: index_path(path)
-    
+
     loop For each file
         Indexer->>Indexer: Read file
         Indexer->>Chunker: split_text(content)
         Chunker-->>Indexer: chunks[]
-        
+
         loop For each chunk
             Indexer->>Embedder: embed(text)
             Embedder-->>Indexer: embedding[768]
             Indexer->>Database: add_document(chunk, embedding)
         end
     end
-    
+
     Database-->>CLI: stats
     CLI-->>User: Indexed N documents
 ```
@@ -80,12 +80,12 @@ flowchart LR
     A[High-Dim Embeddings<br/>768D] --> B[UMAP Training]
     B --> C[Model]
     C --> D[Low-Dim Embeddings<br/>2-50D]
-    
+
     B --> E[Parameters]
     E --> F[n_neighbors]
-    E --> G[n_components] 
+    E --> G[n_components]
     E --> H[min_dist]
-    
+
     D --> I[Benefits]
     I --> J[Faster Search]
     I --> K[Less Memory]
@@ -97,25 +97,25 @@ flowchart LR
 ```mermaid
 flowchart TB
     Q[User Query] --> QA[Query Analysis<br/>w/ Cached LLM]
-    
+
     QA --> CI[Clarified Intent]
     QA --> SQ[Sub-queries]
     QA --> KT[Key Terms]
-    
+
     SQ --> EMB[Embed Each Query]
     EMB --> VS[Vector Search]
-    
+
     VS --> RRF[RRF Fusion]
     RRF --> RANK[Reranking]
-    
+
     RANK --> TOP[Top-K Documents]
     TOP --> CTX[Context Preparation]
-    
+
     CTX --> REPACK[Context Repacking<br/>Deduplication<br/>Summarization<br/>Organization]
-    
+
     REPACK --> GEN[LLM Generation<br/>w/ Same Cached LLM]
     CI --> GEN
-    
+
     GEN --> ANS[Final Answer]
 ```
 
@@ -422,6 +422,7 @@ This project integrates several excellent Ruby gems:
 - [red-candle](https://github.com/red-candle) - Ruby ML/LLM toolkit
 - [lancelot](https://github.com/lancelot) - Lance database bindings
 - [clusterkit](https://github.com/cpetersen/clusterkit) - UMAP and clustering implementation
+- [parsekit](https://github.com/cpetersen/parsekit) - Content extraction
 - [baran](https://github.com/baran) - Text splitting utilities
 
 ## Roadmap
