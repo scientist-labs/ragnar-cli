@@ -7,10 +7,12 @@ module Ragnar
     def initialize(db_path: Ragnar::DEFAULT_DB_PATH,
                    chunk_size: Ragnar::DEFAULT_CHUNK_SIZE,
                    chunk_overlap: Ragnar::DEFAULT_CHUNK_OVERLAP,
-                   embedding_model: Ragnar::DEFAULT_EMBEDDING_MODEL)
+                   embedding_model: Ragnar::DEFAULT_EMBEDDING_MODEL,
+                   show_progress: true)
       @database = Database.new(db_path)
       @chunker = Chunker.new(chunk_size: chunk_size, chunk_overlap: chunk_overlap)
       @embedder = Embedder.new(model_name: embedding_model)
+      @show_progress = show_progress
     end
 
     def index_path(path)
@@ -27,30 +29,40 @@ module Ragnar
         return stats
       end
 
-      puts "Found #{files.size} file(s) to process"
+      puts "Found #{files.size} file(s) to process" if @show_progress
 
-      file_progress = TTY::ProgressBar.new(
-        "Processing [:bar] :percent :current/:total - :filename",
-        total: files.size,
-        bar_format: :block,
-        width: 30,
-        clear: true
-      )
+      file_progress = if @show_progress
+        TTY::ProgressBar.new(
+          "Processing [:bar] :percent :current/:total - :filename",
+          total: files.size,
+          bar_format: :block,
+          width: 30,
+          clear: true
+        )
+      else
+        nil
+      end
 
       files.each do |file_path|
         begin
-          # Update the progress bar with current filename
-          filename = File.basename(file_path)
-          filename = filename[0..27] + "..." if filename.length > 30
-          file_progress.advance(0, filename: filename)
+          if file_progress
+            # Update the progress bar with current filename
+            filename = File.basename(file_path)
+            filename = filename[0..27] + "..." if filename.length > 30
+            file_progress.advance(0, filename: filename)
+          end
 
           process_file(file_path, stats, file_progress)
           stats[:files_processed] += 1
         rescue => e
-          file_progress.log "Error: #{File.basename(file_path)} - #{e.message}"
+          if file_progress
+            file_progress.log "Error: #{File.basename(file_path)} - #{e.message}"
+          else
+            puts "Error processing #{File.basename(file_path)}: #{e.message}" if @show_progress
+          end
           stats[:errors] += 1
         ensure
-          file_progress.advance
+          file_progress&.advance
         end
       end
 
@@ -60,6 +72,27 @@ module Ragnar
     def index_text(text, metadata = {})
       chunks = @chunker.chunk_text(text, metadata)
       process_chunks(chunks, metadata[:file_path] || "inline_text")
+    end
+    
+    # Convenience methods for compatibility
+    def index_files(files)
+      stats = {
+        files_processed: 0,
+        chunks_created: 0,
+        errors: 0
+      }
+      
+      files.each do |file|
+        next unless File.exist?(file)
+        process_file(file, stats)
+        stats[:files_processed] += 1
+      end
+      
+      stats
+    end
+    
+    def index_directory(dir_path)
+      index_path(dir_path)
     end
 
     private

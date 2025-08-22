@@ -32,9 +32,15 @@ Gemfile.lock
 /test_documents/
 /test_*.rb
 /demo_*.rb
+topics_*.html
+compare_methods.rb
+migrate_to_ragnar.rb
+update_modules.rb
 
-# Examples (if they contain test data)
-/examples/
+# Examples with generated output (keep the source files)
+/examples/**/*.html
+/examples/**/*.json
+/examples/**/*.db
 
 # IDE
 .idea/

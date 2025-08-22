@@ -46,14 +46,14 @@ module Ragnar
       dataset = Lancelot::Dataset.open(@db_path)
       
       # Get all documents or a subset
-      docs = if limit
+      docs = if limit && offset > 0
+        # Get limit + offset items, then drop offset
+        dataset.first(limit + offset).drop(offset)
+      elsif limit
         dataset.first(limit)
       else
-        dataset.to_a
+        dataset.to_a.drop(offset)
       end
-      
-      # Skip offset if specified
-      docs = docs.drop(offset) if offset > 0
       
       docs.map do |doc|
         {
@@ -146,14 +146,23 @@ module Ragnar
       end
     end
     
+    def count
+      return 0 unless dataset_exists?
+      
+      dataset = Lancelot::Dataset.open(@db_path)
+      dataset.to_a.size
+    end
+    
     def get_stats
       unless dataset_exists?
         return {
+          document_count: 0,
           total_documents: 0,
           unique_files: 0,
           total_chunks: 0,
           with_embeddings: 0,
-          with_reduced_embeddings: 0
+          with_reduced_embeddings: 0,
+          total_size_mb: 0.0
         }
       end
       
@@ -163,17 +172,20 @@ module Ragnar
       all_docs = dataset.to_a
       
       stats = {
+        document_count: all_docs.size,  # Add for compatibility with specs
         total_documents: all_docs.size,
         total_chunks: all_docs.size,
         unique_files: all_docs.map { |d| d[:file_path] }.uniq.size,
         with_embeddings: 0,
         with_reduced_embeddings: 0,
         avg_chunk_size: 0,
+        total_size_mb: 0,  # Add for CLI stats command
         embedding_dims: nil,
         reduced_dims: nil
       }
       
       chunk_sizes = []
+      total_bytes = 0
       
       all_docs.each do |doc|
         if doc[:embedding] && !doc[:embedding].empty?
@@ -186,10 +198,15 @@ module Ragnar
           stats[:reduced_dims] ||= doc[:reduced_embedding].size
         end
         
-        chunk_sizes << doc[:chunk_text].size if doc[:chunk_text]
+        if doc[:chunk_text]
+          chunk_size = doc[:chunk_text].size
+          chunk_sizes << chunk_size
+          total_bytes += chunk_size
+        end
       end
       
       stats[:avg_chunk_size] = (chunk_sizes.sum.to_f / chunk_sizes.size).round if chunk_sizes.any?
+      stats[:total_size_mb] = (total_bytes / 1024.0 / 1024.0).round(2)
       
       stats
     end

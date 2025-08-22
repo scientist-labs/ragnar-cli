@@ -163,6 +163,42 @@ module Ragnar
       end
     end
 
+    desc "search QUERY", "Search for similar documents"
+    option :database, type: :string, default: Ragnar::DEFAULT_DB_PATH, aliases: "-d", desc: "Path to Lance database"
+    option :k, type: :numeric, default: 5, desc: "Number of results to return"
+    option :show_scores, type: :boolean, default: false, desc: "Show similarity scores"
+    def search(query_text)
+      database = Database.new(options[:database])
+      embedder = Embedder.new
+      
+      # Generate embedding for query
+      query_embedding = embedder.embed_text(query_text)
+      
+      # Search for similar documents
+      results = database.search_similar(query_embedding, k: options[:k])
+      
+      if results.empty?
+        say "No results found.", :yellow
+        return
+      end
+      
+      say "Found #{results.length} results:\n", :green
+      
+      results.each_with_index do |result, idx|
+        say "#{idx + 1}. File: #{result[:file_path]}", :cyan
+        say "   Chunk: #{result[:chunk_index]}"
+        
+        if options[:show_scores]
+          say "   Distance: #{result[:distance].round(4)}"
+        end
+        
+        # Show preview of content
+        preview = result[:chunk_text][0..200].gsub(/\s+/, ' ')
+        say "   Content: #{preview}..."
+        say ""
+      end
+    end
+    
     desc "query QUESTION", "Query the RAG system"
     option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
