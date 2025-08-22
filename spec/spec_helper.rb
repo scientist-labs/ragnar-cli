@@ -7,18 +7,18 @@ SimpleCov.start do
   add_filter "/spec/"
   add_filter "/vendor/"
   add_filter "/.bundle/"
-  
+
   # Group files for better organization in the coverage report
   add_group "Core", "lib/ragnar"
   add_group "CLI", "lib/ragnar/cli"
   add_group "Database", ["lib/ragnar/database", "lib/ragnar/indexer"]
   add_group "Processing", ["lib/ragnar/chunker", "lib/ragnar/embedder", "lib/ragnar/query_processor"]
   add_group "Topic Modeling", "lib/ragnar/topic_modeling"
-  
+
   # Set minimum coverage percentage (optional)
   # Temporarily lowered - aiming to improve to 80%
   minimum_coverage 20
-  
+
   # Use a nice HTML formatter
   formatter SimpleCov::Formatter::HTMLFormatter
 end
@@ -29,6 +29,8 @@ require "tempfile"
 require "fileutils"
 
 RSpec.configure do |config|
+  config.pattern = "spec/**/*_spec.rb"
+
   # Enable flags like --only-failures and --next-failure
   config.example_status_persistence_file_path = ".rspec_status"
 
