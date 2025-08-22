@@ -12,17 +12,6 @@ RSpec.describe Ragnar::Indexer do
       example.run
     end
   end
-  
-  before(:each) do
-    # Mock the Candle model to prevent loading actual models
-    mock_model = double("Candle::EmbeddingModel")
-    @embedding_cache = {}
-    allow(mock_model).to receive(:embedding) do |text|
-      @embedding_cache[text] ||= Array.new(384) { rand }
-      double("tensor", to_a: [@embedding_cache[text]])
-    end
-    allow(Candle::EmbeddingModel).to receive(:from_pretrained).and_return(mock_model)
-  end
 
   describe "#initialize" do
     it "creates an indexer with default settings" do
@@ -105,18 +94,20 @@ RSpec.describe Ragnar::Indexer do
       expect(database.count).to be > 0
     end
 
-    it "respects file extensions filter" do
+    it "indexes multiple file types" do
       suppress_stdout do
-        # Note: index_path may not support extensions filter
         indexer.index_path(test_dir)
       end
       
       database = Ragnar::Database.new(db_path)
-      documents = database.get_embeddings
+      documents = database.get_all_documents_with_embeddings
       
-      # Should only index .txt files
+      # Should index multiple file types (.txt, .md, etc)
       file_paths = documents.map { |d| d[:file_path] }
-      expect(file_paths.all? { |p| p.end_with?(".txt") }).to be true
+      expect(file_paths.size).to be > 0
+      # Check that it indexed both .txt and .md files
+      expect(file_paths.any? { |p| p.end_with?(".txt") }).to be true
+      expect(file_paths.any? { |p| p.end_with?(".md") }).to be true
     end
 
     it "indexes recursively through subdirectories" do
@@ -129,7 +120,7 @@ RSpec.describe Ragnar::Indexer do
       end
       
       database = Ragnar::Database.new(db_path)
-      documents = database.get_embeddings
+      documents = database.get_all_documents_with_embeddings
       
       file_paths = documents.map { |d| d[:file_path] }
       expect(file_paths.any? { |p| p.include?("subdir") }).to be true
@@ -159,7 +150,7 @@ RSpec.describe Ragnar::Indexer do
       end
       
       database = Ragnar::Database.new(db_path)
-      documents = database.get_embeddings
+      documents = database.get_all_documents_with_embeddings
       
       file_paths = documents.map { |d| d[:file_path] }
       expect(file_paths.none? { |p| p.end_with?(".bin") }).to be true

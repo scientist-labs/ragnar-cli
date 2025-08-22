@@ -57,6 +57,10 @@ RSpec.configure do |config|
   def capture_stdout
     original_stdout = $stdout
     $stdout = StringIO.new
+    # Add ioctl method to prevent TTY::ProgressBar errors
+    def $stdout.ioctl(*args)
+      80 # Return default terminal width
+    end
     yield
     $stdout.string
   ensure
@@ -67,6 +71,10 @@ RSpec.configure do |config|
   def suppress_stdout
     original_stdout = $stdout
     $stdout = StringIO.new
+    # Add ioctl method to prevent TTY::ProgressBar errors
+    def $stdout.ioctl(*args)
+      80 # Return default terminal width
+    end
     yield
   ensure
     $stdout = original_stdout

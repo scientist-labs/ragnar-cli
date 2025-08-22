@@ -4,20 +4,6 @@ require "spec_helper"
 
 RSpec.describe Ragnar::Embedder do
   let(:embedder) { described_class.new }
-  
-  before(:each) do
-    # Mock the Candle model to prevent loading actual models
-    mock_model = double("Candle::EmbeddingModel")
-    # Use a hash to store embeddings for consistency
-    @embedding_cache = {}
-    allow(mock_model).to receive(:embedding) do |text|
-      # Generate consistent embeddings for the same text
-      @embedding_cache[text] ||= Array.new(384) { rand }
-      # Return a mock tensor that responds to to_a
-      double("tensor", to_a: [@embedding_cache[text]])
-    end
-    allow(Candle::EmbeddingModel).to receive(:from_pretrained).and_return(mock_model)
-  end
 
   describe "#initialize" do
     it "creates an embedder instance" do

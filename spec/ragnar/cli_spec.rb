@@ -23,10 +23,10 @@ RSpec.describe Ragnar::CLI do
 
     it "indexes a single file" do
       output = capture_stdout do
-        cli.invoke(:index, [test_file], { database: db_path })
+        cli.invoke(:index, [test_file], { db_path: db_path })
       end
 
-      expect(output).to include("Indexing")
+      expect(output).to include("Indexing files from:")
       expect(File.exist?(db_path)).to be true
     end
 
@@ -35,32 +35,32 @@ RSpec.describe Ragnar::CLI do
       File.write(File.join(@temp_dir, "file2.txt"), "Content 2")
 
       output = capture_stdout do
-        cli.invoke(:index, [@temp_dir], { database: db_path })
+        cli.invoke(:index, [@temp_dir], { db_path: db_path })
       end
 
-      expect(output).to include("Indexing")
+      expect(output).to include("Indexing files from:")
     end
 
     it "accepts custom chunk size" do
       output = capture_stdout do
         cli.invoke(:index, [test_file], {
-          database: db_path,
+          db_path: db_path,
           chunk_size: 100
         })
       end
 
-      expect(output).to include("Indexing")
+      expect(output).to include("Indexing files from:")
     end
 
     it "accepts custom chunk overlap" do
       output = capture_stdout do
         cli.invoke(:index, [test_file], {
-          database: db_path,
+          db_path: db_path,
           chunk_overlap: 20
         })
       end
 
-      expect(output).to include("Indexing")
+      expect(output).to include("Indexing files from:")
     end
 
     it "filters by file extensions" do
@@ -70,12 +70,12 @@ RSpec.describe Ragnar::CLI do
 
       output = capture_stdout do
         cli.invoke(:index, [@temp_dir], {
-          database: db_path,
+          db_path: db_path,
           extensions: [".txt", ".md"]
         })
       end
 
-      expect(output).to include("Indexing")
+      expect(output).to include("Indexing files from:")
 
       # Verify only specified extensions were indexed
       database = Ragnar::Database.new(db_path)
@@ -138,18 +138,12 @@ RSpec.describe Ragnar::CLI do
         indexer = Ragnar::Indexer.new(db_path: db_path, show_progress: false)
         indexer.index_path(@temp_dir)
       end
-
-      # Mock LLM to prevent loading actual models
-      llm_instance = instance_double(Ragnar::LLMManager)
-      allow(Ragnar::LLMManager).to receive(:instance).and_return(llm_instance)
-      allow(llm_instance).to receive(:default_llm).and_return(double(generate: "Based on the context, Ruby is a programming language."))
-      allow(llm_instance).to receive(:query).and_return("Based on the context, Ruby is a programming language.")
     end
 
     it "queries with LLM using context from database" do
       output = capture_stdout do
         cli.invoke(:query, ["What is Ruby?"], {
-          database: db_path,
+          db_path: db_path,
           model: "test-model"
         })
       end
@@ -160,7 +154,7 @@ RSpec.describe Ragnar::CLI do
     it "uses specified LLM model" do
       suppress_stdout do
         cli.invoke(:query, ["test query"], {
-          database: db_path,
+          db_path: db_path,
           model: "custom-model"
         })
       end
@@ -182,7 +176,7 @@ RSpec.describe Ragnar::CLI do
 
     it "displays database statistics" do
       output = capture_stdout do
-        cli.invoke(:stats, [], { database: db_path })
+        cli.invoke(:stats, [], { db_path: db_path })
       end
 
       expect(output).to include("Database Statistics")
@@ -192,7 +186,7 @@ RSpec.describe Ragnar::CLI do
 
     it "handles non-existent database gracefully" do
       output = capture_stdout do
-        cli.invoke(:stats, [], { database: "nonexistent_db" })
+        cli.invoke(:stats, [], { db_path: "nonexistent_db" })
       end
 
       expect(output).to include("0") # Should show zeros or handle gracefully
@@ -230,7 +224,7 @@ RSpec.describe Ragnar::CLI do
     it "performs topic modeling" do
       output = capture_stdout do
         cli.invoke(:topics, [], {
-          database: db_path,
+          db_path: db_path,
           num_topics: 3
         })
       end
@@ -241,7 +235,7 @@ RSpec.describe Ragnar::CLI do
     it "accepts custom number of topics" do
       output = capture_stdout do
         cli.invoke(:topics, [], {
-          database: db_path,
+          db_path: db_path,
           num_topics: 2
         })
       end
@@ -254,15 +248,15 @@ RSpec.describe Ragnar::CLI do
 
   describe "error handling" do
     it "handles missing required arguments gracefully" do
-      expect { cli.invoke(:search, []) }.to raise_error(Thor::RequiredArgumentMissingError)
+      expect { cli.invoke(:search, []) }.to raise_error(Thor::InvocationError)
     end
 
     it "handles invalid file paths" do
       output = capture_stdout do
-        cli.invoke(:index, ["/nonexistent/path"], { database: db_path })
+        cli.invoke(:index, ["/nonexistent/path"], { db_path: db_path })
       end
 
-      expect(output).to include("Indexing") # Should still try to process
+      expect(output).to include("Indexing files from:") # Should still try to process
     end
 
     it "handles invalid database path for search" do

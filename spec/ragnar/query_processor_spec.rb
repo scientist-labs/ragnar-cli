@@ -16,33 +16,6 @@ RSpec.describe Ragnar::QueryProcessor do
       example.run
     end
   end
-  
-  before(:each) do
-    # Stub LLMManager to prevent loading actual models
-    llm_instance = instance_double(Ragnar::LLMManager)
-    allow(Ragnar::LLMManager).to receive(:instance).and_return(llm_instance)
-    
-    # Mock the LLM
-    mock_llm = double("LLM")
-    allow(mock_llm).to receive(:generate).and_return("Test response")
-    allow(mock_llm).to receive(:generate_with_schema).and_return({
-      'clarified_intent' => 'test query',
-      'query_type' => 'factual',
-      'context_needed' => 'moderate',
-      'sub_queries' => ['test query'],
-      'key_terms' => []
-    })
-    allow(llm_instance).to receive(:default_llm).and_return(mock_llm)
-    
-    # Mock Candle EmbeddingModel to prevent loading
-    mock_model = double("Candle::EmbeddingModel")
-    @embedding_cache = {}
-    allow(mock_model).to receive(:embedding) do |text|
-      @embedding_cache[text] ||= Array.new(384) { rand }
-      double("tensor", to_a: [@embedding_cache[text]])
-    end
-    allow(Candle::EmbeddingModel).to receive(:from_pretrained).and_return(mock_model)
-  end
 
   def setup_test_database
     indexer = Ragnar::Indexer.new(db_path: db_path, show_progress: false)
