@@ -128,17 +128,97 @@ module Ragnar
       def reduce_dimensions(embeddings)
         require 'clusterkit'
         
-        umap = ClusterKit::Dimensionality::UMAP.new(
-          n_components: @n_components,
-          n_neighbors: 15,
-          random_seed: 42  # For reproducibility
-        )
+        # Validate embeddings before UMAP
+        valid_embeddings, invalid_indices = validate_embeddings_for_umap(embeddings)
         
-        # Convert to format UMAP expects
-        umap.fit_transform(embeddings)
+        if valid_embeddings.empty?
+          raise "No valid embeddings for dimensionality reduction.\n\n" \
+                "All embeddings contain invalid values (NaN, Infinity, or non-numeric).\n" \
+                "Try running without dimensionality reduction:\n" \
+                "  ragnar topics --reduce-dimensions false"
+        end
+        
+        if invalid_indices.any? && @verbose
+          puts "  ⚠️  Warning: #{invalid_indices.size} embeddings with invalid values removed"
+        end
+        
+        begin
+          # Adjust parameters based on data size
+          n_samples = valid_embeddings.size
+          n_components = [@n_components, n_samples - 1, 50].min
+          n_neighbors = [15, n_samples - 1].min
+          
+          if @verbose && n_components != @n_components
+            puts "  Adjusted n_components to #{n_components} (was #{@n_components}) for #{n_samples} samples"
+          end
+          
+          umap = ClusterKit::Dimensionality::UMAP.new(
+            n_components: n_components,
+            n_neighbors: n_neighbors,
+            random_seed: 42  # For reproducibility
+          )
+          
+          # Convert to format UMAP expects
+          reduced = umap.fit_transform(valid_embeddings)
+          
+          # If we had to remove invalid embeddings, reconstruct the full array
+          if invalid_indices.any?
+            full_reduced = []
+            valid_idx = 0
+            embeddings.size.times do |i|
+              if invalid_indices.include?(i)
+                # Use zeros for invalid embeddings (they'll be outliers anyway)
+                full_reduced << Array.new(n_components, 0.0)
+              else
+                full_reduced << reduced[valid_idx]
+                valid_idx += 1
+              end
+            end
+            full_reduced
+          else
+            reduced
+          end
+        rescue => e
+          if e.message.include?("index out of bounds")
+            error_msg = "\n❌ Dimensionality reduction failed\n\n"
+            error_msg += "The UMAP algorithm encountered an error with your data.\n\n"
+            error_msg += "This typically happens with:\n"
+            error_msg += "  • Embeddings containing invalid values\n"
+            error_msg += "  • Too few samples (#{valid_embeddings.size} valid embeddings)\n"
+            error_msg += "  • Incompatible parameters\n\n"
+            error_msg += "Solutions:\n"
+            error_msg += "  1. Run without dimensionality reduction:\n"
+            error_msg += "     ragnar topics --reduce-dimensions false\n\n"
+            error_msg += "  2. Use fewer dimensions:\n"
+            error_msg += "     ragnar topics --n-components 2\n\n"
+            error_msg += "  3. Re-index your documents:\n"
+            error_msg += "     ragnar index <path> --force\n"
+            raise error_msg
+          else
+            raise
+          end
+        end
       rescue LoadError
         puts "Warning: Dimensionality reduction requires ClusterKit. Using original embeddings." if @verbose
         embeddings
+      end
+      
+      private
+      
+      def validate_embeddings_for_umap(embeddings)
+        valid = []
+        invalid_indices = []
+        
+        embeddings.each_with_index do |embedding, idx|
+          if embedding.is_a?(Array) && 
+             embedding.all? { |v| v.is_a?(Numeric) && v.finite? }
+            valid << embedding
+          else
+            invalid_indices << idx
+          end
+        end
+        
+        [valid, invalid_indices]
       end
       
       def build_topics(cluster_ids)

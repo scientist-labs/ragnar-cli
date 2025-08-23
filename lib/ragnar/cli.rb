@@ -127,7 +127,22 @@ module Ragnar
           exit 1
         end
 
-        embeddings = docs_with_embeddings.map { |d| d[:embedding] }
+        # Check if we have reduced embeddings available
+        first_doc = docs_with_embeddings.first
+        has_reduced = first_doc[:reduced_embedding] && !first_doc[:reduced_embedding].empty?
+        
+        if has_reduced
+          embeddings = docs_with_embeddings.map { |d| d[:reduced_embedding] }
+          say "Using reduced embeddings (#{embeddings.first.size} dimensions)", :yellow if options[:verbose]
+          # Already reduced, so don't reduce again in the engine
+          reduce_dims = false
+        else
+          embeddings = docs_with_embeddings.map { |d| d[:embedding] }
+          say "Using original embeddings (#{embeddings.first.size} dimensions)", :yellow if options[:verbose]
+          # Let the engine handle dimensionality reduction if needed
+          reduce_dims = true
+        end
+        
         documents = docs_with_embeddings.map { |d| d[:chunk_text] }
         metadata = docs_with_embeddings.map { |d| { file_path: d[:file_path], chunk_index: d[:chunk_index] } }
 
@@ -137,7 +152,8 @@ module Ragnar
         engine = Ragnar::TopicModeling::Engine.new(
           min_cluster_size: options[:min_cluster_size],
           labeling_method: options[:method].to_sym,
-          verbose: options[:verbose]
+          verbose: options[:verbose],
+          reduce_dimensions: reduce_dims
         )
 
         # Extract topics
