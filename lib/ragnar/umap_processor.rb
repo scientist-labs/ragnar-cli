@@ -61,31 +61,9 @@ module Ragnar
       puts "  Neighbors: #{n_neighbors}"
       puts "  Min distance: #{min_dist}"
       
-      # Use the simple ClusterKit.umap method
-      progressbar = TTY::ProgressBar.new(
-        "Training UMAP [:bar] :percent",
-        total: 100,
-        bar_format: :block,
-        width: 30
-      )
-      
-      # Start progress in background (ClusterKit doesn't provide callbacks)
-      progress_thread = Thread.new do
-        100.times do
-          sleep(0.05)
-          begin
-            progressbar.advance
-          rescue IOError, SystemCallError => e
-            # Handle stream closed errors gracefully
-            break
-          end
-          break if @training_complete
-        end
-      rescue => e
-        # Ignore any other thread-related errors
-      end
-      
       # Perform the actual training using the class-based API
+      puts "  Training UMAP model (this may take a moment)..."
+      
       @umap_instance = ClusterKit::Dimensionality::UMAP.new(
         n_components: n_components,
         n_neighbors: n_neighbors
@@ -93,14 +71,7 @@ module Ragnar
       
       @reduced_embeddings = @umap_instance.fit_transform(embedding_matrix)
       
-      @training_complete = true
-      progress_thread.join if progress_thread&.alive?
-      
-      begin
-        progressbar.finish
-      rescue IOError, SystemCallError => e
-        # Ignore stream closed errors when finishing
-      end
+      puts "  ✓ UMAP training complete"
       
       # Store the parameters for saving
       @model_params = {
