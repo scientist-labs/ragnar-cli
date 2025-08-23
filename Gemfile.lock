@@ -6,7 +6,7 @@ PATH
       clusterkit (~> 0.1.0.pre.2)
       lancelot (~> 0.3, >= 0.3.2)
       parsekit (~> 0.1.0.pre.1)
-      red-candle (~> 1.0)
+      red-candle (~> 1.2)
       thor (~> 1.3)
       tty-progressbar (~> 0.18)
 

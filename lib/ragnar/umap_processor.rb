@@ -73,9 +73,16 @@ module Ragnar
       progress_thread = Thread.new do
         100.times do
           sleep(0.05)
-          progressbar.advance
+          begin
+            progressbar.advance
+          rescue IOError, SystemCallError => e
+            # Handle stream closed errors gracefully
+            break
+          end
           break if @training_complete
         end
+      rescue => e
+        # Ignore any other thread-related errors
       end
       
       # Perform the actual training using the class-based API
@@ -87,8 +94,13 @@ module Ragnar
       @reduced_embeddings = @umap_instance.fit_transform(embedding_matrix)
       
       @training_complete = true
-      progress_thread.join
-      progressbar.finish
+      progress_thread.join if progress_thread&.alive?
+      
+      begin
+        progressbar.finish
+      rescue IOError, SystemCallError => e
+        # Ignore stream closed errors when finishing
+      end
       
       # Store the parameters for saving
       @model_params = {
