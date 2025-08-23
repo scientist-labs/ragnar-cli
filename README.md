@@ -419,11 +419,11 @@ MIT License - see LICENSE file for details
 ## Acknowledgments
 
 This project integrates several excellent Ruby gems:
-- [red-candle](https://github.com/red-candle) - Ruby ML/LLM toolkit
-- [lancelot](https://github.com/lancelot) - Lance database bindings
+- [red-candle](https://github.com/assaydepot/red-candle) - Ruby ML/LLM toolkit
+- [lancelot](https://github.com/cpetersen/lancelot) - Lance database bindings
 - [clusterkit](https://github.com/cpetersen/clusterkit) - UMAP and clustering implementation
 - [parsekit](https://github.com/cpetersen/parsekit) - Content extraction
-- [baran](https://github.com/baran) - Text splitting utilities
+- [baran](https://github.com/moeki0/baran) - Text splitting utilities
 
 ## Roadmap
 
