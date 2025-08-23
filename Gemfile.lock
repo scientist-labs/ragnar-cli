@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    ragnar-cli (0.1.0.pre.1)
+    ragnar-cli (0.1.0.pre.2)
       baran (~> 0.2)
       clusterkit (~> 0.1.0.pre.2)
       lancelot (~> 0.3, >= 0.3.2)

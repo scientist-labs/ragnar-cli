@@ -28,6 +28,67 @@ module Ragnar
       
       puts "Found #{embeddings.size} embeddings"
       
+      # Validate embeddings
+      embedding_dims = embeddings.map(&:size).uniq
+      if embedding_dims.size > 1
+        puts "  ⚠️  Warning: Inconsistent embedding dimensions found: #{embedding_dims.inspect}"
+        puts "     This may cause errors during UMAP training."
+        # Filter to only embeddings with the most common dimension
+        most_common_dim = embedding_dims.max_by { |dim| embeddings.count { |e| e.size == dim } }
+        embeddings = embeddings.select { |e| e.size == most_common_dim }
+        puts "     Using only embeddings with #{most_common_dim} dimensions (#{embeddings.size} embeddings)"
+      end
+      
+      # Check for nil or invalid values
+      invalid_count = 0
+      nan_count = 0
+      inf_count = 0
+      
+      valid_embeddings = embeddings.select do |embedding|
+        if !embedding.is_a?(Array)
+          invalid_count += 1
+          false
+        elsif embedding.any? { |v| !v.is_a?(Numeric) }
+          invalid_count += 1
+          false
+        elsif embedding.any?(&:nan?)
+          nan_count += 1
+          false
+        elsif embedding.any? { |v| !v.finite? }
+          inf_count += 1
+          false
+        else
+          true
+        end
+      end
+      
+      if valid_embeddings.size < embeddings.size
+        puts "\n  ⚠️  Data quality issues detected:"
+        puts "     • Invalid embeddings: #{invalid_count}" if invalid_count > 0
+        puts "     • Embeddings with NaN: #{nan_count}" if nan_count > 0
+        puts "     • Embeddings with Infinity: #{inf_count}" if inf_count > 0
+        puts "     • Total removed: #{embeddings.size - valid_embeddings.size}"
+        puts "     • Remaining valid: #{valid_embeddings.size}"
+        
+        embeddings = valid_embeddings
+      end
+      
+      if embeddings.empty?
+        raise "No valid embeddings found after validation.\n\n" \
+              "All embeddings contain invalid values (NaN, Infinity, or non-numeric).\n" \
+              "This suggests a problem with the embedding model or indexing process.\n\n" \
+              "Please try:\n" \
+              "  1. Re-indexing your documents: ragnar index <path> --force\n" \
+              "  2. Using a different embedding model\n" \
+              "  3. Checking your document content for unusual characters"
+      end
+      
+      if embeddings.size < 10
+        raise "Too few valid embeddings (#{embeddings.size}) for UMAP training.\n\n" \
+              "UMAP requires at least 10 samples to work effectively.\n" \
+              "Please index more documents or check for data quality issues."
+      end
+      
       # Adjust parameters based on the number of samples
       # UMAP requires n_neighbors < n_samples
       # Also, n_components should be less than n_samples for stability
@@ -55,6 +116,19 @@ module Ragnar
       embedding_matrix = embeddings
       original_dims = embeddings.first.size
       
+      # Ensure n_components is reasonable
+      if n_components >= original_dims
+        puts "  ⚠️  Warning: n_components (#{n_components}) >= original dimensions (#{original_dims})"
+        n_components = [original_dims / 2, 50].min
+        puts "     Reducing n_components to #{n_components}"
+      end
+      
+      # For very high dimensional data, be more conservative
+      if original_dims > 500 && n_components > 50
+        puts "  ⚠️  Note: High dimensional data (#{original_dims}D) being reduced to #{n_components}D"
+        puts "     Consider using n_components <= 50 for stability"
+      end
+      
       puts "\nTraining UMAP model..."
       puts "  Original dimensions: #{original_dims}"
       puts "  Target dimensions: #{n_components}"
@@ -64,14 +138,45 @@ module Ragnar
       # Perform the actual training using the class-based API
       puts "  Training UMAP model (this may take a moment)..."
       
-      @umap_instance = ClusterKit::Dimensionality::UMAP.new(
-        n_components: n_components,
-        n_neighbors: n_neighbors
-      )
-      
-      @reduced_embeddings = @umap_instance.fit_transform(embedding_matrix)
-      
-      puts "  ✓ UMAP training complete"
+      begin
+        @umap_instance = ClusterKit::Dimensionality::UMAP.new(
+          n_components: n_components,
+          n_neighbors: n_neighbors
+        )
+        
+        @reduced_embeddings = @umap_instance.fit_transform(embedding_matrix)
+        
+        puts "  ✓ UMAP training complete"
+      rescue => e
+        # Provide helpful error message without exposing internal stack trace
+        error_msg = "\n❌ UMAP training failed\n\n"
+        
+        if e.message.include?("index out of bounds")
+          error_msg += "The UMAP algorithm encountered an index out of bounds error.\n\n"
+          error_msg += "This typically happens when:\n"
+          error_msg += "  • The embedding data contains invalid values (NaN, Infinity)\n"
+          error_msg += "  • The parameters are incompatible with your data\n"
+          error_msg += "  • There are duplicate or corrupted embeddings\n\n"
+          error_msg += "Suggested solutions:\n"
+          error_msg += "  1. Try with more conservative parameters:\n"
+          error_msg += "     ragnar train-umap --n-components 10 --n-neighbors 5\n\n"
+          error_msg += "  2. Re-index your documents to regenerate embeddings:\n"
+          error_msg += "     ragnar index <path> --force\n\n"
+          error_msg += "  3. Check your embedding model configuration\n\n"
+          error_msg += "Current parameters:\n"
+          error_msg += "  • n_components: #{n_components}\n"
+          error_msg += "  • n_neighbors: #{n_neighbors}\n"
+          error_msg += "  • embeddings: #{embeddings.size} samples\n"
+          error_msg += "  • dimensions: #{original_dims}\n"
+        else
+          error_msg += "Error: #{e.message}\n\n"
+          error_msg += "This may be due to incompatible parameters or data issues.\n"
+          error_msg += "Try using more conservative parameters:\n"
+          error_msg += "  ragnar train-umap --n-components 10 --n-neighbors 5\n"
+        end
+        
+        raise RuntimeError, error_msg
+      end
       
       # Store the parameters for saving
       @model_params = {
