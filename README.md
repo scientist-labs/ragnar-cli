@@ -165,7 +165,30 @@ ragnar train-umap \
 ragnar apply-umap
 ```
 
-### 3. Query the System
+### 3. Extract Topics
+
+Perform topic modeling to discover themes in your indexed documents:
+
+```bash
+# Basic topic extraction
+ragnar topics
+
+# Adjust clustering parameters
+ragnar topics --min-cluster-size 10
+
+# Export visualizations
+ragnar topics --export html  # Interactive D3.js visualization
+ragnar topics --export json  # JSON data for further processing
+
+# Verbose mode for debugging
+ragnar topics --verbose
+```
+
+The HTML export includes:
+- **Topic Bubbles**: Interactive bubble chart showing topic sizes and coherence
+- **Embedding Scatter Plot**: Visualization of all documents in embedding space, colored by cluster
+
+### 4. Query the System
 
 ```bash
 # Basic query
@@ -197,7 +220,7 @@ When using `--verbose` or `-v`, you'll see:
 6. **Response Generation**: The final LLM prompt and response
 7. **Final Results**: Confidence score and source attribution
 
-### 4. Check Statistics
+### 5. Check Statistics
 
 ```bash
 ragnar stats
@@ -424,16 +447,3 @@ This project integrates several excellent Ruby gems:
 - [clusterkit](https://github.com/cpetersen/clusterkit) - UMAP and clustering implementation
 - [parsekit](https://github.com/cpetersen/parsekit) - Content extraction
 - [baran](https://github.com/moeki0/baran) - Text splitting utilities
-
-## Roadmap
-
-- [ ] Add support for PDF and HTML documents
-- [ ] Implement incremental indexing
-- [ ] Add conversation memory for multi-turn queries
-- [ ] Support for hybrid search (vector + keyword)
-- [ ] Web UI for interactive queries
-- [ ] Docker containerization
-- [ ] Performance benchmarking suite
-- [ ] Support for multiple embedding models simultaneously
-- [ ] Query result caching
-- [ ] Automatic index optimization

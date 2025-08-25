@@ -1,5 +1,8 @@
+require_relative "cli_visualization"
+
 module Ragnar
   class CLI < Thor
+    include CLIVisualization
     desc "index PATH", "Index text files from PATH (file or directory)"
     option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
     option :chunk_size, type: :numeric, default: Ragnar::DEFAULT_CHUNK_SIZE, desc: "Chunk size in tokens"
@@ -169,7 +172,8 @@ module Ragnar
 
         # Export if requested
         if options[:export]
-          export_topics(topics, options[:export])
+          # Pass embeddings and cluster IDs for visualization
+          export_topics(topics, options[:export], embeddings: embeddings, cluster_ids: engine.instance_variable_get(:@cluster_ids))
         end
 
       rescue => e
@@ -404,12 +408,12 @@ module Ragnar
       end
     end
 
-    def export_topics(topics, format)
+    def export_topics(topics, format, embeddings: nil, cluster_ids: nil)
       case format.downcase
       when 'json'
         export_topics_json(topics)
       when 'html'
-        export_topics_html(topics)
+        export_topics_html(topics, embeddings: embeddings, cluster_ids: cluster_ids)
       else
         say "Unknown export format: #{format}. Use 'json' or 'html'.", :red
       end
@@ -431,9 +435,9 @@ module Ragnar
       say "Topics exported to: #{filename}", :green
     end
 
-    def export_topics_html(topics)
+    def export_topics_html(topics, embeddings: nil, cluster_ids: nil)
       # Generate self-contained HTML with D3.js visualization
-      html = generate_topic_visualization_html(topics)
+      html = generate_topic_visualization_html(topics, embeddings: embeddings, cluster_ids: cluster_ids)
 
       filename = "topics_#{Time.now.strftime('%Y%m%d_%H%M%S')}.html"
       File.write(filename, html)
@@ -446,113 +450,5 @@ module Ragnar
       end
     end
 
-    def generate_topic_visualization_html(topics)
-      # Convert topics to JSON for D3.js
-      topics_json = topics.map do |topic|
-        {
-          id: topic.id,
-          label: topic.label || "Topic #{topic.id}",
-          size: topic.size,
-          terms: topic.terms.first(10),
-          coherence: topic.coherence,
-          samples: topic.representative_docs(k: 2).map { |d| d[0..200] }
-        }
-      end.to_json
-
-      # HTML template with embedded D3.js
-      <<~HTML
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Topic Visualization</title>
-          <script src="https://d3js.org/d3.v7.min.js"></script>
-          <style>
-            body { font-family: -apple-system, sans-serif; margin: 20px; }
-            #viz { width: 100%; height: 500px; border: 1px solid #ddd; }
-            .topic { cursor: pointer; }
-            .topic:hover { opacity: 0.8; }
-            #details { margin-top: 20px; padding: 15px; background: #f5f5f5; }
-            .term { display: inline-block; margin: 5px; padding: 5px 10px; background: #e0e0e0; border-radius: 3px; }
-          </style>
-        </head>
-        <body>
-          <h1>Topic Analysis Results</h1>
-          <div id="viz"></div>
-          <div id="details">Click on a topic to see details</div>
-
-          <script>
-            const data = #{topics_json};
-
-            // Create bubble chart
-            const width = document.getElementById('viz').clientWidth;
-            const height = 500;
-
-            const svg = d3.select("#viz")
-              .append("svg")
-              .attr("width", width)
-              .attr("height", height);
-
-            // Create scale for bubble sizes
-            const sizeScale = d3.scaleSqrt()
-              .domain([0, d3.max(data, d => d.size)])
-              .range([10, 50]);
-
-            // Create color scale
-            const colorScale = d3.scaleSequential(d3.interpolateViridis)
-              .domain([0, 1]);
-
-            // Create force simulation
-            const simulation = d3.forceSimulation(data)
-              .force("x", d3.forceX(width / 2).strength(0.05))
-              .force("y", d3.forceY(height / 2).strength(0.05))
-              .force("collide", d3.forceCollide(d => sizeScale(d.size) + 2));
-
-            // Create bubbles
-            const bubbles = svg.selectAll(".topic")
-              .data(data)
-              .enter().append("g")
-              .attr("class", "topic");
-
-            bubbles.append("circle")
-              .attr("r", d => sizeScale(d.size))
-              .attr("fill", d => colorScale(d.coherence))
-              .attr("stroke", "#fff")
-              .attr("stroke-width", 2);
-
-            bubbles.append("text")
-              .text(d => d.label)
-              .attr("text-anchor", "middle")
-              .attr("dy", ".3em")
-              .style("font-size", d => Math.min(sizeScale(d.size) / 3, 14) + "px");
-
-            // Add click handler
-            bubbles.on("click", function(event, d) {
-              showDetails(d);
-            });
-
-            // Update positions
-            simulation.on("tick", () => {
-              bubbles.attr("transform", d => `translate(${d.x},${d.y})`);
-            });
-
-            // Show topic details
-            function showDetails(topic) {
-              const details = document.getElementById('details');
-              details.innerHTML = `
-                <h2>${topic.label}</h2>
-                <p><strong>Documents:</strong> ${topic.size}</p>
-                <p><strong>Coherence:</strong> ${(topic.coherence * 100).toFixed(1)}%</p>
-                <p><strong>Top Terms:</strong></p>
-                <div>${topic.terms.map(t => `<span class="term">${t}</span>`).join('')}</div>
-                <p><strong>Sample Documents:</strong></p>
-                ${topic.samples.map(s => `<p style="font-size: 0.9em; color: #666;">"${s}..."</p>`).join('')}
-              `;
-            }
-          </script>
-        </body>
-        </html>
-      HTML
-    end
   end
 end
