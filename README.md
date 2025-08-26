@@ -124,14 +124,14 @@ flowchart TB
 ### As a Gem
 
 ```bash
-gem install ragnar
+gem install ragnar-cli
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/ragnar.git
-cd ragnar
+git clone https://github.com/cpetersen/ragnar-cli.git
+cd ragnar-cli
 bundle install
 gem build ragnar.gemspec
 gem install ./ragnar-*.gem
