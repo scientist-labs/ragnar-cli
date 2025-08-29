@@ -1,24 +1,27 @@
-# Main entry point for topic modeling functionality
-# Designed for future extraction into a separate gem
+# frozen_string_literal: true
 
-require_relative 'topic_modeling/topic'
-require_relative 'topic_modeling/term_extractor'
-require_relative 'topic_modeling/metrics'
-require_relative 'topic_modeling/topic_labeler'
-require_relative 'topic_modeling/engine'
+# Topic modeling wrapper that delegates to the Topical gem
+# This maintains backward compatibility while using the extracted library
+
+require 'topical'
 
 module Ragnar
   module TopicModeling
+    # Re-export Topical classes for backward compatibility
+    Topic = Topical::Topic
+    Engine = Topical::Engine
+    
+    # Re-export metrics module
+    Metrics = Topical::Metrics
     
     # Convenience method to create a new topic modeling engine
     def self.new(**options)
-      Engine.new(**options)
+      Topical::Engine.new(**options)
     end
     
     # Extract topics from embeddings and documents (simple interface)
     def self.extract(embeddings:, documents:, **options)
-      engine = Engine.new(**options)
-      engine.fit(embeddings: embeddings, documents: documents)
+      Topical.extract(embeddings: embeddings, documents: documents, **options)
     end
   end
 end

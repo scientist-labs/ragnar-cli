@@ -32,7 +32,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "thor", "~> 1.3"
   spec.add_dependency "red-candle", "~> 1.2"
   spec.add_dependency "lancelot", "~> 0.3", ">= 0.3.2"
-  spec.add_dependency "clusterkit", "~> 0.1.0.pre.2"
+  spec.add_dependency "topical", "~> 0.1"  # Topic modeling extracted to separate gem
   spec.add_dependency "baran", "~> 0.2"
   spec.add_dependency "parsekit", "~> 0.1.0.pre.1"
   spec.add_dependency "tty-progressbar", "~> 0.18"
