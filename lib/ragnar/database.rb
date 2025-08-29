@@ -5,6 +5,7 @@ module Ragnar
     def initialize(db_path, table_name: "documents")
       @db_path = db_path
       @table_name = table_name
+      @dataset_cache = nil  # Cache to prevent file descriptor leaks
       ensure_database_exists
     end
     
@@ -34,16 +35,23 @@ module Ragnar
         metadata: :string
       }
       
+      # Clear cache before modifying dataset
+      clear_dataset_cache
+      
       # Use the new open_or_create method from Lancelot
       # This automatically handles both creating new and opening existing datasets
       dataset = Lancelot::Dataset.open_or_create(@db_path, schema: schema)
       dataset.add_documents(data)
+      
+      # Clear cache after modification to ensure fresh data on next read
+      clear_dataset_cache
     end
     
     def get_embeddings(limit: nil, offset: 0)
       return [] unless dataset_exists?
       
-      dataset = Lancelot::Dataset.open(@db_path)
+      dataset = cached_dataset
+      return [] unless dataset
       
       # Get all documents or a subset
       docs = if limit && offset > 0
@@ -67,7 +75,8 @@ module Ragnar
     def update_reduced_embeddings(updates)
       return if updates.empty?
       
-      dataset = Lancelot::Dataset.open(@db_path)
+      dataset = cached_dataset
+      return unless dataset
       
       # Get all existing documents and safely extract their data
       all_docs = dataset.to_a.map do |doc|
@@ -113,17 +122,24 @@ module Ragnar
         metadata: :string
       }
       
+      # Clear cache before recreating dataset
+      clear_dataset_cache
+      
       # Remove old dataset and create new one with updated data
       FileUtils.rm_rf(@db_path)
       # Use open_or_create which will create since we just deleted the path
       dataset = Lancelot::Dataset.open_or_create(@db_path, schema: schema)
       dataset.add_documents(updated_docs)
+      
+      # Clear cache after modification
+      clear_dataset_cache
     end
     
     def search_similar(embedding, k: 10, use_reduced: false)
       return [] unless dataset_exists?
       
-      dataset = Lancelot::Dataset.open(@db_path)
+      dataset = cached_dataset
+      return [] unless dataset
       
       embedding_field = use_reduced ? :reduced_embedding : :embedding
       
@@ -149,7 +165,9 @@ module Ragnar
     def count
       return 0 unless dataset_exists?
       
-      dataset = Lancelot::Dataset.open(@db_path)
+      dataset = cached_dataset
+      return 0 unless dataset
+      
       dataset.to_a.size
     end
     
@@ -166,7 +184,18 @@ module Ragnar
         }
       end
       
-      dataset = Lancelot::Dataset.open(@db_path)
+      dataset = cached_dataset
+      unless dataset
+        return {
+          document_count: 0,
+          total_documents: 0,
+          unique_files: 0,
+          total_chunks: 0,
+          with_embeddings: 0,
+          with_reduced_embeddings: 0,
+          total_size_mb: 0.0
+        }
+      end
       
       # Get all documents
       all_docs = dataset.to_a
@@ -214,7 +243,9 @@ module Ragnar
     def get_all_documents_with_embeddings(limit: nil)
       return [] unless dataset_exists?
       
-      dataset = Lancelot::Dataset.open(@db_path)
+      dataset = cached_dataset
+      return [] unless dataset
+      
       all_docs = limit ? dataset.first(limit) : dataset.to_a
       
       all_docs.select { |doc| doc[:embedding] && !doc[:embedding].empty? }
@@ -223,7 +254,8 @@ module Ragnar
     def full_text_search(query, limit: 10)
       return [] unless dataset_exists?
       
-      dataset = Lancelot::Dataset.open(@db_path)
+      dataset = cached_dataset
+      return [] unless dataset
       
       # Use Lancelot's full-text search
       results = dataset.full_text_search(
@@ -246,8 +278,15 @@ module Ragnar
     def dataset_exists?
       return false unless File.exist?(@db_path)
       
+      # Try to use cached dataset if available
+      if @dataset_cache
+        return true
+      end
+      
+      # Otherwise check if we can open it
       begin
-        Lancelot::Dataset.open(@db_path)
+        # Don't cache here, just check existence
+        dataset = Lancelot::Dataset.open(@db_path)
         true
       rescue
         false
@@ -262,6 +301,22 @@ module Ragnar
     
     def table_exists?
       dataset_exists?
+    end
+    
+    # Cached dataset accessor to prevent file descriptor leaks
+    def cached_dataset
+      return nil unless File.exist?(@db_path)
+      
+      @dataset_cache ||= begin
+        Lancelot::Dataset.open(@db_path)
+      rescue => e
+        nil
+      end
+    end
+    
+    # Clear the cached dataset (e.g., after modifications)
+    def clear_dataset_cache
+      @dataset_cache = nil
     end
   end
 end
