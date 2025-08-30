@@ -3,12 +3,15 @@
 module MockHelpers
   # Stub embeddings to return consistent fake vectors
   def stub_embeddings
-    # Stub Candle embeddings if it's loaded
+    # Stub the model loading to avoid actually loading the embedding model
+    allow_any_instance_of(Ragnar::Embedder).to receive(:load_model).and_return(mock_embedding_model)
+    
+    # Also stub Candle::Embedding if it's used directly
     if defined?(Candle::Embedding)
       allow(Candle::Embedding).to receive(:new).and_return(mock_embedding_model)
     end
     
-    # Stub the Embedder class methods directly
+    # Stub the Embedder class methods directly for extra safety
     allow_any_instance_of(Ragnar::Embedder).to receive(:embed_text) do |_, text|
       text.nil? || text.empty? ? nil : fake_embedding_for(text)
     end
@@ -51,6 +54,10 @@ module MockHelpers
   # Create a mock embedding model
   def mock_embedding_model
     double("EmbeddingModel").tap do |model|
+      allow(model).to receive(:embedding) do |text|
+        # Return something that responds to to_a like the real model
+        [fake_embedding_for(text)]
+      end
       allow(model).to receive(:embed) do |text|
         fake_embedding_for(text)
       end

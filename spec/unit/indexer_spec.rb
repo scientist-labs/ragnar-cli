@@ -37,7 +37,7 @@ RSpec.describe Ragnar::Indexer do
       it "indexes a text file" do
         file = temp_file("test.txt", "This is test content for indexing.")
         
-        stats = indexer.index_path(file)
+        stats = suppress_output { indexer.index_path(file) }
         
         expect(stats[:files_processed]).to eq(1)
         expect(stats[:chunks_created]).to be > 0
@@ -45,7 +45,7 @@ RSpec.describe Ragnar::Indexer do
       end
       
       it "handles non-existent file" do
-        stats = indexer.index_path("/non/existent/file.txt")
+        stats = suppress_output { indexer.index_path("/non/existent/file.txt") }
         
         expect(stats[:files_processed]).to eq(0)
         expect(stats[:chunks_created]).to eq(0)
@@ -56,7 +56,7 @@ RSpec.describe Ragnar::Indexer do
       it "indexes all text files in directory" do
         create_sample_files  # Creates 3 files in temp_dir
         
-        stats = indexer.index_path(temp_dir)
+        stats = suppress_output { indexer.index_path(temp_dir) }
         
         expect(stats[:files_processed]).to eq(3)
         expect(stats[:chunks_created]).to be > 0
@@ -66,7 +66,7 @@ RSpec.describe Ragnar::Indexer do
       it "handles empty directory" do
         empty_dir = Dir.mktmpdir
         
-        stats = indexer.index_path(empty_dir)
+        stats = suppress_output { indexer.index_path(empty_dir) }
         
         expect(stats[:files_processed]).to eq(0)
         expect(stats[:chunks_created]).to eq(0)
@@ -78,7 +78,7 @@ RSpec.describe Ragnar::Indexer do
         temp_file("text.txt", "text content")
         temp_file("image.jpg", "\xFF\xD8\xFF")  # JPEG header
         
-        stats = indexer.index_path(temp_dir)
+        stats = suppress_output { indexer.index_path(temp_dir) }
         
         expect(stats[:files_processed]).to eq(1)  # Only the text file
       end
@@ -91,7 +91,7 @@ RSpec.describe Ragnar::Indexer do
         # Make embedder raise an error
         allow_any_instance_of(Ragnar::Embedder).to receive(:embed_batch).and_raise("Embedding error")
         
-        stats = indexer.index_path(file)
+        stats = suppress_output { indexer.index_path(file) }
         
         expect(stats[:files_processed]).to eq(0)
         expect(stats[:errors]).to eq(1)

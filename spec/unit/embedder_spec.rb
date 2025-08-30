@@ -11,8 +11,10 @@ RSpec.describe Ragnar::Embedder do
     end
     
     it "accepts custom model name" do
-      custom = described_class.new(model_name: "custom/model")
-      expect(custom.model_name).to eq("custom/model")
+      suppress_output do
+        custom = described_class.new(model_name: "custom/model")
+        expect(custom.model_name).to eq("custom/model")
+      end
     end
   end
   
