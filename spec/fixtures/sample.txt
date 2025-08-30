@@ -1,0 +1,4 @@
+This is a sample text file for testing.
+It contains multiple lines of text.
+The indexer should be able to process this file.
+Each line might become part of a chunk depending on the chunk size.
