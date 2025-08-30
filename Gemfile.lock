@@ -1,10 +1,4 @@
 PATH
-  remote: ../topical
-  specs:
-    topical (0.1.0)
-      clusterkit (>= 0.1)
-
-PATH
   remote: .
   specs:
     ragnar-cli (0.1.0.pre.3)
@@ -13,7 +7,7 @@ PATH
       parsekit (~> 0.1.0.pre.1)
       red-candle (~> 1.2)
       thor (~> 1.3)
-      topical (~> 0.1)
+      topical (~> 0.0.1.pre.1)
       tty-progressbar (~> 0.18)
 
 GEM
@@ -81,6 +75,8 @@ GEM
     simplecov_json_formatter (0.1.4)
     strings-ansi (0.2.0)
     thor (1.4.0)
+    topical (0.0.1.pre.1)
+      clusterkit (>= 0.1)
     tty-cursor (0.7.1)
     tty-progressbar (0.18.3)
       strings-ansi (~> 0.2)
@@ -100,7 +96,6 @@ DEPENDENCIES
   rspec (~> 3.0)
   rubocop (~> 1.21)
   simplecov (~> 0.22)
-  topical!
 
 BUNDLED WITH
    2.6.9
