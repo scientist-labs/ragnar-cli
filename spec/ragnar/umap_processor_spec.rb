@@ -47,24 +47,22 @@ RSpec.describe Ragnar::UmapProcessor do
       before do
         # Add minimal test data
         database = Ragnar::Database.new(temp_db)
-        test_docs = [
+        # Create at least 10 test documents (UMAP minimum requirement)
+        test_docs = (1..12).map do |i|
           {
-            text: "Test doc 1",
-            embedding: Array.new(384) { 0.1 },
-            metadata: { source: "test1" }
-          },
-          {
-            text: "Test doc 2",
-            embedding: Array.new(384) { 0.2 },
-            metadata: { source: "test2" }
+            text: "Test doc #{i}",
+            embedding: Array.new(384) { rand },
+            metadata: { source: "test#{i}" }
           }
-        ]
+        end
         database.add_documents(test_docs)
 
         # Mock ClusterKit to avoid actual UMAP training
         mock_umap = double("UMAP")
         allow(ClusterKit::Dimensionality::UMAP).to receive(:new).and_return(mock_umap)
-        allow(mock_umap).to receive(:fit_transform).and_return([[0.1, 0.2], [0.3, 0.4]])
+        # Return reduced embeddings for all 12 documents
+        reduced_embeddings = (1..12).map { [rand, rand] }
+        allow(mock_umap).to receive(:fit_transform).and_return(reduced_embeddings)
         allow(mock_umap).to receive(:save_model)
         allow(ClusterKit::Dimensionality::UMAP).to receive(:save_data)
       end
@@ -73,7 +71,7 @@ RSpec.describe Ragnar::UmapProcessor do
         suppress_stdout do
           result = processor.train(n_components: 2)
           expect(result).to be_a(Hash)
-          expect(result[:embeddings_count]).to eq(2)
+          expect(result[:embeddings_count]).to eq(12)
           expect(result[:original_dims]).to eq(384)
           expect(result[:reduced_dims]).to eq(2)
         end
@@ -83,7 +81,7 @@ RSpec.describe Ragnar::UmapProcessor do
         suppress_stdout do
           result = processor.train(n_components: 2, n_neighbors: 50)
           expect(result).to be_a(Hash)
-          # With 2 samples, n_neighbors should be adjusted to 1
+          # With 12 samples, n_neighbors should be adjusted down from 50
         end
       end
     end
