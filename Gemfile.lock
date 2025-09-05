@@ -15,7 +15,7 @@ GEM
   specs:
     ast (2.4.3)
     baran (0.2.1)
-    clusterkit (0.1.0)
+    clusterkit (0.2.0)
     diff-lcs (1.6.2)
     docile (1.4.1)
     json (2.13.2)
