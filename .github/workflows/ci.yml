@@ -5,6 +5,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
+      # Install Rust toolchain (needed for clusterkit native extensions)
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      
+      # Install protobuf compiler (needed for lancelot)
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      
       - uses: actions/cache@v3
         with:
           path: |
@@ -17,9 +28,6 @@ jobs:
         with:
           ruby-version: ruby
           bundler-cache: true
-
-      - name: Compile native extension
-        run: bundle exec rake compile
 
       - name: Run specs
         run: |
