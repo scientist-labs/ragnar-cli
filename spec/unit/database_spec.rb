@@ -73,9 +73,9 @@ RSpec.describe Ragnar::Database do
     
     it "returns document count" do
       mock_dataset = double("Dataset")
-      allow(Lancelot::Dataset).to receive(:open).and_return(mock_dataset)
-      allow(mock_dataset).to receive(:to_a).and_return([{}, {}, {}])
       allow(database).to receive(:dataset_exists?).and_return(true)
+      allow(database).to receive(:cached_dataset).and_return(mock_dataset)
+      allow(mock_dataset).to receive(:to_a).and_return([{}, {}, {}])
       
       expect(database.count).to eq(3)
     end
@@ -102,9 +102,9 @@ RSpec.describe Ragnar::Database do
       ]
       
       mock_dataset = double("Dataset")
-      allow(Lancelot::Dataset).to receive(:open).and_return(mock_dataset)
-      allow(mock_dataset).to receive(:to_a).and_return(docs)
       allow(database).to receive(:dataset_exists?).and_return(true)
+      allow(database).to receive(:cached_dataset).and_return(mock_dataset)
+      allow(mock_dataset).to receive(:to_a).and_return(docs)
       
       stats = database.get_stats
       
@@ -118,12 +118,12 @@ RSpec.describe Ragnar::Database do
   describe "#full_text_search" do
     it "performs text search" do
       mock_dataset = double("Dataset")
-      allow(Lancelot::Dataset).to receive(:open).and_return(mock_dataset)
+      allow(database).to receive(:dataset_exists?).and_return(true)
+      allow(database).to receive(:cached_dataset).and_return(mock_dataset)
       allow(mock_dataset).to receive(:full_text_search).and_return([
         { id: "1", chunk_text: "matching text", file_path: "file.txt",
           chunk_index: 0, metadata: "{}" }
       ])
-      allow(database).to receive(:dataset_exists?).and_return(true)
       
       results = database.full_text_search("query", limit: 5)
       
