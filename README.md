@@ -170,11 +170,12 @@ ragnar apply-umap
 Perform topic modeling to discover themes in your indexed documents:
 
 ```bash
-# Basic topic extraction
+# Basic topic extraction (requires minimum 20-30 indexed documents)
 ragnar topics
 
-# Adjust clustering parameters
-ragnar topics --min-cluster-size 10
+# Adjust clustering parameters for smaller datasets
+ragnar topics --min-cluster-size 3  # Allow smaller topics
+ragnar topics --min-samples 2       # Less strict density requirements
 
 # Export visualizations
 ragnar topics --export html  # Interactive D3.js visualization
@@ -183,6 +184,11 @@ ragnar topics --export json  # JSON data for further processing
 # Verbose mode for debugging
 ragnar topics --verbose
 ```
+
+**Note**: Topic modeling requires sufficient documents to identify meaningful patterns. For best results:
+- Index at least 20-30 documents (ideally 50+)
+- Ensure documents cover diverse topics
+- Documents should be substantial (50+ words each)
 
 The HTML export includes:
 - **Topic Bubbles**: Interactive bubble chart showing topic sizes and coherence
@@ -306,6 +312,60 @@ result = processor.query(
 puts result[:answer]
 puts "Confidence: #{result[:confidence]}%"
 ```
+
+### Topic Modeling
+
+Extract topics from your indexed documents:
+
+```ruby
+# Example with sufficient documents for clustering (minimum ~20-30 needed)
+documents = [
+  # Finance cluster
+  "Federal Reserve raises interest rates to combat inflation",
+  "Stock markets rally on positive earnings reports", 
+  "Cryptocurrency markets show increased volatility",
+  "Corporate bonds yield higher returns this quarter",
+  "Central banks coordinate global monetary policy",
+  
+  # Technology cluster  
+  "AI breakthrough in natural language processing announced",
+  "Machine learning transforms healthcare diagnostics",
+  "Cloud computing adoption accelerates in enterprises",
+  "Quantum computing reaches new error correction milestone",
+  "Open source frameworks receive major updates",
+  
+  # Healthcare cluster
+  "Clinical trials show promise for cancer immunotherapy",
+  "Telemedicine reshapes patient care delivery models",
+  "Gene editing advances treatment for rare diseases",
+  "Mental health awareness campaigns gain momentum",
+  "mRNA vaccine technology platform expands",
+  
+  # Add more documents for better clustering...
+  # See TOPIC_MODELING_EXAMPLE.md for complete example
+]
+
+# Extract topics using Topical
+database = Ragnar::Database.new("ragnar_database")
+docs = database.get_all_documents_with_embeddings
+
+embeddings = docs.map { |d| d[:embedding] }
+texts = docs.map { |d| d[:chunk_text] }
+
+topics = Topical.extract(
+  embeddings: embeddings,
+  documents: texts,
+  min_topic_size: 3  # Minimum docs per topic
+)
+
+topics.each do |topic|
+  puts "Topic: #{topic.label}"
+  puts "Terms: #{topic.terms.join(', ')}"
+  puts "Size: #{topic.size} documents\n\n"
+end
+```
+
+For a complete working example with 40+ documents, see [TOPIC_MODELING_EXAMPLE.md](TOPIC_MODELING_EXAMPLE.md).
 
 ### Custom Chunking Strategies
 

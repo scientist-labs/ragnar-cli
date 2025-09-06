@@ -26,7 +26,6 @@ Gemfile.lock
 *.bin
 *.json
 !package.json
-!Gemfile.lock
 
 # Test data and documents
 /test_documents/
