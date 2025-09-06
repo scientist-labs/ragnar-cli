@@ -16,30 +16,11 @@ namespace :spec do
     t.rspec_opts = "--format progress"
   end
   
-  desc "Run CLI integration tests (fast, mocked)"
-  RSpec::Core::RakeTask.new(:cli) do |t|
-    t.pattern = "spec/integration/cli/**/*_spec.rb"
-    t.rspec_opts = "--format progress"
-  end
-  
   desc "Run end-to-end integration tests (slow, requires real models)"
   RSpec::Core::RakeTask.new(:e2e) do |t|
     t.pattern = "spec/integration/*_spec.rb"
     t.rspec_opts = "--format documentation"
     ENV['RUN_INTEGRATION'] = 'true'
-  end
-  
-  desc "Run all tests (unit + CLI + end-to-end)"
-  task :all do
-    Rake::Task["spec:unit"].invoke
-    puts "\n" + "="*40
-    puts "Unit tests complete. Running CLI tests..."
-    puts "="*40 + "\n"
-    Rake::Task["spec:cli"].invoke
-    puts "\n" + "="*50
-    puts "CLI tests complete. Running end-to-end tests..."
-    puts "="*50 + "\n"
-    Rake::Task["spec:e2e"].invoke
   end
   
   desc "Run tests with coverage report"

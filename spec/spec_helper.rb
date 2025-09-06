@@ -32,10 +32,12 @@ RSpec.configure do |config|
   config.include MockHelpers
   config.include TestHelpers
   
-  # Global before - stub slow operations by default
+  # Global before - stub slow operations by default (unless integration tests)
   config.before(:each) do
-    stub_embeddings unless self.class.metadata[:real_embeddings]
-    stub_llm unless self.class.metadata[:real_llm]
+    unless self.class.metadata[:integration]
+      stub_embeddings unless self.class.metadata[:real_embeddings]
+      stub_llm unless self.class.metadata[:real_llm]
+    end
   end
   
   # Clean up temp files after each test
