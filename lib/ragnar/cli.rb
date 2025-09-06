@@ -104,6 +104,9 @@ module Ragnar
     option :method, type: :string, default: "hybrid", desc: "Labeling method: fast, quality, or hybrid"
     option :export, type: :string, desc: "Export topics to file (json or html)"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing"
+    option :summarize, type: :boolean, default: false, aliases: "-s", desc: "Generate human-readable topic summaries using LLM"
+    option :llm_model, type: :string, default: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", desc: "LLM model for summarization"
+    option :gguf_file, type: :string, default: "tinyllama-1.1b-chat-v1.0.q4_k_m.gguf", desc: "GGUF file name for LLM model"
     def topics
       require_relative 'topic_modeling'
 
@@ -167,8 +170,31 @@ module Ragnar
           metadata: metadata
         )
 
+        # Generate summaries if requested
+        if options[:summarize] && topics.any?
+          say "Generating topic summaries with LLM...", :yellow
+          begin
+            require 'red-candle'
+            
+            # Initialize LLM for summarization once
+            say "Loading model: #{options[:llm_model]}", :cyan if options[:verbose]
+            llm = Candle::LLM.from_pretrained(options[:llm_model], gguf_file: options[:gguf_file])
+            
+            # Add summaries to topics
+            topics.each_with_index do |topic, i|
+              say "  Summarizing topic #{i+1}/#{topics.length}...", :yellow if options[:verbose]
+              topic.instance_variable_set(:@summary, summarize_topic(topic, llm))
+            end
+            
+            say "Topic summaries generated!", :green
+          rescue => e
+            say "Warning: Could not generate topic summaries: #{e.message}", :yellow
+            say "Proceeding without summaries...", :yellow
+          end
+        end
+
         # Display results
-        display_topics(topics)
+        display_topics(topics, show_summaries: options[:summarize])
 
         # Export if requested
         if options[:export]
@@ -299,6 +325,33 @@ module Ragnar
 
     private
 
+    def summarize_topic(topic, llm)
+      # Get representative documents for context
+      sample_docs = topic.representative_docs(k: 3)
+      
+      # Simple, clear prompt for summarization
+      prompt = <<~PROMPT
+        Summarize what connects these documents in 1-2 sentences:
+        
+        Key terms: #{topic.terms.first(5).join(', ')}
+        
+        Documents:
+        #{sample_docs.map.with_index { |doc, i| "#{i+1}. #{doc}" }.join("\n")}
+        
+        Summary:
+      PROMPT
+      
+      begin
+        summary = llm.generate(prompt).strip
+        # Clean up common artifacts
+        summary = summary.lines.first&.strip || "Related documents"
+        summary = summary.gsub(/^(Summary:|Topic:|Documents:)/i, '').strip
+        summary.empty? ? "Documents about #{topic.terms.first(2).join(' and ')}" : summary
+      rescue => e
+        "Documents about #{topic.terms.first(2).join(' and ')}"
+      end
+    end
+
     def fetch_all_documents(database)
       # Temporary workaround to get all documents
       # In production, we'd add a proper method to Database class
@@ -325,9 +378,12 @@ module Ragnar
       []
     end
 
-    def display_topics(topics)
+    def display_topics(topics, show_summaries: false)
       say "\n" + "="*60, :green
       say "Topic Analysis Results", :cyan
+      if show_summaries
+        say "  (with LLM-generated summaries)", :yellow
+      end
       say "="*60, :green
 
       if topics.empty?
@@ -346,21 +402,21 @@ module Ragnar
         say "\n" + "─" * 40, :blue
         say "MAJOR TOPICS (≥20 docs)", :blue
         say "─" * 40, :blue
-        display_topic_group(large_topics, :cyan)
+        display_topic_group(large_topics, :cyan, show_summaries: show_summaries)
       end
 
       if medium_topics.any?
         say "\n" + "─" * 40, :yellow
         say "MEDIUM TOPICS (10-19 docs)", :yellow
         say "─" * 40, :yellow
-        display_topic_group(medium_topics, :yellow)
+        display_topic_group(medium_topics, :yellow, show_summaries: show_summaries)
       end
 
       if small_topics.any?
         say "\n" + "─" * 40, :white
         say "MINOR TOPICS (<10 docs)", :white
         say "─" * 40, :white
-        display_topic_group(small_topics, :white)
+        display_topic_group(small_topics, :white, show_summaries: show_summaries)
       end
 
       # Summary statistics
@@ -384,9 +440,17 @@ module Ragnar
       say "    Small (<10): #{small_topics.length} topics, #{small_topics.sum(&:size)} docs"
     end
 
-    def display_topic_group(topics, color)
+    def display_topic_group(topics, color, show_summaries: false)
       topics.sort_by { |t| -t.size }.each_with_index do |topic, idx|
         say "\n#{topic.label || 'Unlabeled'} (#{topic.size} docs)", color
+
+        # Show LLM summary if available
+        if show_summaries
+          summary = topic.instance_variable_get(:@summary)
+          if summary
+            say "  Summary: #{summary}", :green
+          end
+        end
 
         # Show coherence as a bar
         if topic.coherence > 0
@@ -399,8 +463,8 @@ module Ragnar
         # Compact term display
         say "  Terms: #{topic.terms.first(6).join(' • ')}" if topic.terms.any?
 
-        # Short sample
-        if topic.representative_docs(k: 1).any?
+        # Short sample (unless we showed a summary)
+        if !show_summaries && topic.representative_docs(k: 1).any?
           preview = topic.representative_docs(k: 1).first
           preview = preview[0..100] + "..." if preview.length > 100
           say "  \"#{preview}\"", :white
@@ -420,13 +484,22 @@ module Ragnar
     end
 
     def export_topics_json(topics)
+      topics_data = topics.map do |topic|
+        topic_hash = topic.to_h
+        # Add summary if it exists
+        summary = topic.instance_variable_get(:@summary)
+        topic_hash[:summary] = summary if summary
+        topic_hash
+      end
+
       data = {
         generated_at: Time.now.iso8601,
-        topics: topics.map(&:to_h),
+        topics: topics_data,
         summary: {
           total_topics: topics.length,
           total_documents: topics.sum(&:size),
-          average_size: (topics.sum(&:size).to_f / topics.length).round(1)
+          average_size: (topics.sum(&:size).to_f / topics.length).round(1),
+          has_summaries: topics.any? { |t| t.instance_variable_get(:@summary) }
         }
       }
 
