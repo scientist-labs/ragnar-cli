@@ -5,7 +5,7 @@ module Ragnar
     def generate_topic_visualization_html(topics, embeddings: nil, cluster_ids: nil)
       # Convert topics to JSON for D3.js
       topics_json = topics.map do |topic|
-        {
+        topic_data = {
           id: topic.id,
           label: topic.label || "Topic #{topic.id}",
           size: topic.size,
@@ -13,6 +13,12 @@ module Ragnar
           coherence: topic.coherence,
           samples: topic.representative_docs(k: 2).map { |d| d[0..200] }
         }
+        
+        # Add summary if it exists
+        summary = topic.instance_variable_get(:@summary)
+        topic_data[:summary] = summary if summary
+        
+        topic_data
       end.to_json
 
       # HTML template with enhanced visualization
@@ -141,10 +147,19 @@ module Ragnar
             // Show topic details
             function showDetails(topic) {
               const details = document.getElementById('details');
+              let summaryHtml = '';
+              if (topic.summary) {
+                summaryHtml = `
+                  <p><strong>Summary:</strong></p>
+                  <p style="font-size: 1.1em; color: #2c5234; padding: 15px; background: #e8f5e8; border-radius: 6px; border-left: 4px solid #4caf50; margin: 15px 0; line-height: 1.5;">${topic.summary}</p>
+                `;
+              }
+              
               details.innerHTML = `
                 <h2>${topic.label}</h2>
                 <p><strong>Documents:</strong> ${topic.size}</p>
                 <p><strong>Coherence:</strong> ${(topic.coherence * 100).toFixed(1)}%</p>
+                ${summaryHtml}
                 <p><strong>Top Terms:</strong></p>
                 <div>${topic.terms.map(t => `<span class="term">${t}</span>`).join('')}</div>
                 <p><strong>Sample Documents:</strong></p>
