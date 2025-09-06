@@ -262,12 +262,14 @@ RSpec.describe Ragnar::UmapProcessor do
     let(:reduced_embeddings) { Array.new(15) { Array.new(50, 0.5) } }
     
     describe "#save_model" do
+      let(:mock_umap) { double("UMAP") }
+      
       before do
         # Set up processor with mocked UMAP instance and results
-        processor.instance_variable_set(:@umap_instance, @mock_umap)
+        processor.instance_variable_set(:@umap_instance, mock_umap)
         processor.instance_variable_set(:@reduced_embeddings, reduced_embeddings)
         
-        allow(@mock_umap).to receive(:save_model)
+        allow(mock_umap).to receive(:save_model)
         allow(ClusterKit::Dimensionality::UMAP).to receive(:save_data)
         allow_any_instance_of(Ragnar::UmapProcessor).to receive(:puts)
       end
@@ -275,7 +277,7 @@ RSpec.describe Ragnar::UmapProcessor do
       it "saves both model and embeddings" do
         processor.send(:save_model)
 
-        expect(@mock_umap).to have_received(:save_model).with(model_path)
+        expect(mock_umap).to have_received(:save_model).with(model_path)
         
         embeddings_path = model_path.sub(/\.bin$/, '_embeddings.json')
         expect(ClusterKit::Dimensionality::UMAP).to have_received(:save_data)
@@ -289,7 +291,7 @@ RSpec.describe Ragnar::UmapProcessor do
           processor.send(:save_model)
         }.not_to raise_error
 
-        expect(@mock_umap).not_to have_received(:save_model)
+        expect(mock_umap).not_to have_received(:save_model)
       end
     end
 
@@ -297,6 +299,8 @@ RSpec.describe Ragnar::UmapProcessor do
       let(:embeddings_path) { model_path.sub(/\.bin$/, '_embeddings.json') }
 
       before do
+        # Use call_original for File.exist? by default, only stub specific path
+        allow(File).to receive(:exist?).and_call_original
         allow(File).to receive(:exist?).with(embeddings_path).and_return(true)
         allow(ClusterKit::Dimensionality::UMAP).to receive(:load_data).and_return(reduced_embeddings)
         allow_any_instance_of(Ragnar::UmapProcessor).to receive(:puts)
@@ -318,6 +322,7 @@ RSpec.describe Ragnar::UmapProcessor do
       end
 
       it "raises error when embeddings file not found" do
+        # Override the specific stub for this test
         allow(File).to receive(:exist?).with(embeddings_path).and_return(false)
 
         expect {
@@ -327,22 +332,28 @@ RSpec.describe Ragnar::UmapProcessor do
     end
 
     describe "#load_umap_model" do
+      let(:mock_umap_model) { double("UMAP Model") }
+      
       before do
+        # Use call_original for File.exist? by default, only stub specific path  
+        allow(File).to receive(:exist?).and_call_original
         allow(File).to receive(:exist?).with(model_path).and_return(true)
-        allow(ClusterKit::Dimensionality::UMAP).to receive(:load_model).and_return(@mock_umap)
+        allow(ClusterKit::Dimensionality::UMAP).to receive(:load_model).and_return(mock_umap_model)
         allow_any_instance_of(Ragnar::UmapProcessor).to receive(:puts)
       end
 
       it "loads UMAP model from file" do
         result = processor.send(:load_umap_model)
 
-        expect(result).to eq(@mock_umap)
+        expect(result).to eq(mock_umap_model)
         expect(ClusterKit::Dimensionality::UMAP).to have_received(:load_model).with(model_path)
       end
 
       it "caches loaded model for subsequent calls" do
-        # Reset any existing model cache
+        # Reset any existing model cache and clear previous expectations
         processor.instance_variable_set(:@umap_instance, nil)
+        # Clear the mock so we can track fresh calls
+        allow(ClusterKit::Dimensionality::UMAP).to receive(:load_model).and_return(mock_umap_model)
         
         processor.send(:load_umap_model)
         processor.send(:load_umap_model)
