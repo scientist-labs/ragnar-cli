@@ -4,10 +4,7 @@
 require_relative "../spec_helper"
 
 RSpec.configure do |config|
-  # Override to NOT stub things for integration tests
-  config.before(:each) do
-    # Don't stub embeddings or LLM for integration tests
-  end
+  # Integration tests use real components - no additional stubbing needed
   
   config.before(:suite) do
     puts "\n=== Running INTEGRATION tests with REAL components ==="

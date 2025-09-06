@@ -3,9 +3,9 @@
 require "bundler/gem_tasks"
 require "rspec/core/rake_task"
 
-# Default spec task - runs only fast unit tests
+# Default spec task - runs unit tests and CLI integration (fast, mocked)
 RSpec::Core::RakeTask.new(:spec) do |t|
-  t.pattern = "spec/unit/**/*_spec.rb"
+  t.pattern = "spec/{unit,integration/cli}/**/*_spec.rb"
   t.rspec_opts = "--format progress"
 end
 
@@ -16,20 +16,11 @@ namespace :spec do
     t.rspec_opts = "--format progress"
   end
   
-  desc "Run slow integration tests (requires real models)"
-  RSpec::Core::RakeTask.new(:integration) do |t|
-    t.pattern = "spec/integration/**/*_spec.rb"
+  desc "Run end-to-end integration tests (slow, requires real models)"
+  RSpec::Core::RakeTask.new(:e2e) do |t|
+    t.pattern = "spec/integration/*_spec.rb"
     t.rspec_opts = "--format documentation"
-  end
-  
-  desc "Run all tests (unit + integration)"
-  task :all do
-    Rake::Task["spec:unit"].invoke
-    puts "\n" + "="*60
-    puts "Unit tests complete. Running integration tests..."
-    puts "="*60 + "\n"
     ENV['RUN_INTEGRATION'] = 'true'
-    Rake::Task["spec:integration"].invoke
   end
   
   desc "Run tests with coverage report"

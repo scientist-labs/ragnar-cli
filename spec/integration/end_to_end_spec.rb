@@ -49,27 +49,65 @@ RSpec.describe "End-to-end RAG pipeline", :integration, :real_embeddings do
     # Prepare documents
     docs_dir = temp_dir
     
-    # Create documents with distinct topics
-    File.write(File.join(docs_dir, "tech1.txt"),
+    # Create documents with distinct topics (need at least 10 for clustering)
+    # AI/ML Topic (4 docs)
+    File.write(File.join(docs_dir, "ai1.txt"),
       "Machine learning is a subset of artificial intelligence. " \
       "Neural networks are used in deep learning. " \
-      "AI models can learn from data.")
+      "AI models can learn from data patterns.")
     
-    File.write(File.join(docs_dir, "tech2.txt"),
+    File.write(File.join(docs_dir, "ai2.txt"),
+      "Natural language processing enables computers to understand human text. " \
+      "Large language models like GPT use transformers architecture. " \
+      "AI can generate human-like text responses.")
+      
+    File.write(File.join(docs_dir, "ai3.txt"),
+      "Computer vision allows machines to interpret visual information. " \
+      "Convolutional neural networks are used for image recognition. " \
+      "AI can identify objects in photographs.")
+      
+    File.write(File.join(docs_dir, "ai4.txt"),
+      "Reinforcement learning trains agents through reward systems. " \
+      "Deep Q-networks combine neural networks with Q-learning. " \
+      "AI can learn to play games and control robots.")
+    
+    # Web Development Topic (3 docs)
+    File.write(File.join(docs_dir, "web1.txt"),
       "Web development involves HTML, CSS, and JavaScript. " \
       "React and Vue are popular frontend frameworks. " \
-      "Node.js enables server-side JavaScript.")
+      "Node.js enables server-side JavaScript development.")
     
-    File.write(File.join(docs_dir, "tech3.txt"),
-      "Databases store structured data. " \
-      "SQL is used for relational databases. " \
-      "NoSQL databases like MongoDB are document-oriented.")
+    File.write(File.join(docs_dir, "web2.txt"),
+      "RESTful APIs enable communication between web services. " \
+      "HTTP methods like GET and POST handle requests. " \
+      "JSON is commonly used for data exchange.")
+      
+    File.write(File.join(docs_dir, "web3.txt"),
+      "Responsive web design adapts to different screen sizes. " \
+      "CSS Grid and Flexbox provide layout solutions. " \
+      "Progressive web apps offer native-like experiences.")
+    
+    # Database Topic (3 docs)  
+    File.write(File.join(docs_dir, "db1.txt"),
+      "Databases store structured data efficiently. " \
+      "SQL is used for relational database queries. " \
+      "Indexes improve query performance significantly.")
+      
+    File.write(File.join(docs_dir, "db2.txt"),
+      "NoSQL databases like MongoDB store documents. " \
+      "Key-value stores provide simple data access. " \
+      "Graph databases model relationships between entities.")
+      
+    File.write(File.join(docs_dir, "db3.txt"),
+      "Database transactions ensure data consistency. " \
+      "ACID properties guarantee reliable operations. " \
+      "Backup and recovery protect against data loss.")
     
     # Index documents
     indexer = Ragnar::Indexer.new(db_path: db_path, show_progress: false)
     suppress_output { indexer.index_path(docs_dir) }
     
-    # Extract topics
+    # Extract topics using Ragnar's topic modeling
     database = Ragnar::Database.new(db_path)
     docs = database.get_all_documents_with_embeddings
     
@@ -77,17 +115,27 @@ RSpec.describe "End-to-end RAG pipeline", :integration, :real_embeddings do
     
     embeddings = docs.map { |d| d[:embedding] }
     documents = docs.map { |d| d[:chunk_text] }
+    metadata = docs.map { |d| { file_path: d[:file_path], chunk_index: d[:chunk_index] } }
     
-    topics = Topical.extract(
+    # Use Ragnar's topic modeling engine
+    engine = Ragnar::TopicModeling::Engine.new(
+      min_cluster_size: 2,
+      labeling_method: :term_based,
+      verbose: false,
+      reduce_dimensions: true
+    )
+    
+    topics = engine.fit(
       embeddings: embeddings,
       documents: documents,
-      min_topic_size: 2
+      metadata: metadata
     )
     
     expect(topics).not_to be_empty
+    expect(topics.length).to be >= 2  # Should find AI and web topics
     topics.each do |topic|
       expect(topic.terms).not_to be_empty
-      expect(topic.documents).not_to be_empty
+      expect(topic.size).to be >= 2
     end
   end
 end

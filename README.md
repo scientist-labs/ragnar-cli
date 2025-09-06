@@ -130,7 +130,7 @@ gem install ragnar-cli
 ### From Source
 
 ```bash
-git clone https://github.com/cpetersen/ragnar-cli.git
+git clone https://github.com/scientist-labs/ragnar-cli.git
 cd ragnar-cli
 bundle install
 gem build ragnar.gemspec
@@ -322,25 +322,25 @@ Extract topics from your indexed documents:
 documents = [
   # Finance cluster
   "Federal Reserve raises interest rates to combat inflation",
-  "Stock markets rally on positive earnings reports", 
+  "Stock markets rally on positive earnings reports",
   "Cryptocurrency markets show increased volatility",
   "Corporate bonds yield higher returns this quarter",
   "Central banks coordinate global monetary policy",
-  
-  # Technology cluster  
+
+  # Technology cluster
   "AI breakthrough in natural language processing announced",
   "Machine learning transforms healthcare diagnostics",
   "Cloud computing adoption accelerates in enterprises",
   "Quantum computing reaches new error correction milestone",
   "Open source frameworks receive major updates",
-  
+
   # Healthcare cluster
   "Clinical trials show promise for cancer immunotherapy",
   "Telemedicine reshapes patient care delivery models",
   "Gene editing advances treatment for rare diseases",
   "Mental health awareness campaigns gain momentum",
   "mRNA vaccine technology platform expands",
-  
+
   # Add more documents for better clustering...
   # See TOPIC_MODELING_EXAMPLE.md for complete example
 ]
@@ -503,7 +503,7 @@ MIT License - see LICENSE file for details
 
 This project integrates several excellent Ruby gems:
 - [red-candle](https://github.com/assaydepot/red-candle) - Ruby ML/LLM toolkit
-- [lancelot](https://github.com/cpetersen/lancelot) - Lance database bindings
-- [clusterkit](https://github.com/cpetersen/clusterkit) - UMAP and clustering implementation
-- [parsekit](https://github.com/cpetersen/parsekit) - Content extraction
+- [lancelot](https://github.com/scientist-labs/lancelot) - Lance database bindings
+- [clusterkit](https://github.com/scientist-labs/clusterkit) - UMAP and clustering implementation
+- [parsekit](https://github.com/scientist-labs/parsekit) - Content extraction
 - [baran](https://github.com/moeki0/baran) - Text splitting utilities
