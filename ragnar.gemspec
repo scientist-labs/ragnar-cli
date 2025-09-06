@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
 
   spec.summary = "A Ruby + Rust powered RAG (Retrieval-Augmented Generation) system"
   spec.description = "Ragnar is a high-performance RAG system that leverages Rust libraries through Ruby bindings for embeddings, vector search, and topic modeling. It provides a complete CLI for indexing documents and querying with LLMs."
-  spec.homepage = "https://github.com/cpetersen/ragnar"
+  spec.homepage = "https://github.com/scientist-labs/ragnar"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.0.0"
 
