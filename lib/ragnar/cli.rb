@@ -91,14 +91,21 @@ module Ragnar
     option :n_components, type: :numeric, default: 50, desc: "Number of dimensions for reduction"
     option :n_neighbors, type: :numeric, default: 15, desc: "Number of neighbors for UMAP"
     option :min_dist, type: :numeric, default: 0.1, desc: "Minimum distance for UMAP"
-    option :model_path, type: :string, default: "umap_model.bin", desc: "Path to save UMAP model"
+    option :model_path, type: :string, desc: "Path to save UMAP model"
     def train_umap
       say "Training UMAP model on embeddings...", :green
 
       config = Config.instance
+      # Use model_path from options if provided, otherwise use config models_dir
+      model_path = if options[:model_path]
+        options[:model_path]
+      else
+        File.join(config.models_dir, "umap_model.bin")
+      end
+      
       processor = UmapProcessor.new(
         db_path: options[:db_path] || config.database_path,
-        model_path: options[:model_path] || File.join(config.models_dir, "umap_model.bin")
+        model_path: model_path
       )
 
       begin
@@ -121,11 +128,15 @@ module Ragnar
 
     desc "apply-umap", "Apply trained UMAP model to reduce embedding dimensions"
     option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
-    option :model_path, type: :string, default: "umap_model.bin", desc: "Path to UMAP model"
+    option :model_path, type: :string, desc: "Path to UMAP model"
     option :batch_size, type: :numeric, default: 100, desc: "Batch size for processing"
     def apply_umap
       config = Config.instance
-      model_path = options[:model_path] || File.join(config.models_dir, "umap_model.bin")
+      model_path = if options[:model_path]
+        options[:model_path]
+      else
+        File.join(config.models_dir, "umap_model.bin")
+      end
 
       unless File.exist?(model_path)
         say "Error: UMAP model not found at: #{model_path}", :red
