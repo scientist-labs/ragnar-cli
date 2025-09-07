@@ -1,8 +1,28 @@
 require_relative "cli_visualization"
+require "thor/interactive"
 
 module Ragnar
   class CLI < Thor
     include CLIVisualization
+    include Thor::Interactive::Command
+
+    # Configure interactive mode
+    configure_interactive(
+      prompt: "ragnar> ",
+      allow_nested: false,
+      default_handler: proc do |input, thor_instance|
+        # Route unrecognized input to the query command
+        thor_instance.invoke(:query, [input.strip])
+      end
+    )
+
+    # Class variables for caching expensive resources in interactive mode
+    class_variable_set(:@@cached_database, nil)
+    class_variable_set(:@@cached_embedder, nil) 
+    class_variable_set(:@@cached_llm_manager, nil)
+    class_variable_set(:@@cached_query_processor, nil)
+    class_variable_set(:@@cached_db_path, nil)
+
     desc "index PATH", "Index text files from PATH (file or directory)"
     option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
     option :chunk_size, type: :numeric, default: Ragnar::DEFAULT_CHUNK_SIZE, desc: "Chunk size in tokens"
@@ -16,11 +36,21 @@ module Ragnar
 
       say "Indexing files from: #{path}", :green
 
+      # Debug options in interactive mode
+      puts "Debug - options: #{options.inspect}" if ENV['DEBUG']
+
+      # Clear database cache when indexing new content
+      db_path = options[:db_path] || Ragnar::DEFAULT_DB_PATH
+      if @@cached_db_path == db_path
+        @@cached_database = nil
+        @@cached_query_processor = nil
+      end
+
       indexer = Indexer.new(
-        db_path: options[:db_path],
-        chunk_size: options[:chunk_size],
-        chunk_overlap: options[:chunk_overlap],
-        embedding_model: options[:model]
+        db_path: db_path,
+        chunk_size: options[:chunk_size] || Ragnar::DEFAULT_CHUNK_SIZE,
+        chunk_overlap: options[:chunk_overlap] || Ragnar::DEFAULT_CHUNK_OVERLAP,
+        embedding_model: options[:model] || Ragnar::DEFAULT_EMBEDDING_MODEL
       )
 
       begin
@@ -112,8 +142,8 @@ module Ragnar
 
       say "Extracting topics from indexed documents...", :green
 
-      # Load embeddings and documents from database
-      database = Database.new(options[:db_path])
+      # Load embeddings and documents from database - use cache in interactive mode
+      database = get_cached_database(options[:db_path])
 
       begin
         # Get all documents with embeddings
@@ -214,8 +244,8 @@ module Ragnar
     option :k, type: :numeric, default: 5, desc: "Number of results to return"
     option :show_scores, type: :boolean, default: false, desc: "Show similarity scores"
     def search(query_text)
-      database = Database.new(options[:database])
-      embedder = Embedder.new
+      database = get_cached_database(options[:database])
+      embedder = get_cached_embedder()
       
       # Generate embedding for query
       query_embedding = embedder.embed_text(query_text)
@@ -251,7 +281,7 @@ module Ragnar
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
     def query(question)
-      processor = QueryProcessor.new(db_path: options[:db_path])
+      processor = get_cached_query_processor(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
 
       begin
         result = processor.query(question, top_k: options[:top_k], verbose: options[:verbose])
@@ -297,7 +327,7 @@ module Ragnar
     desc "stats", "Show database statistics"
     option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
     def stats
-      db = Database.new(options[:db_path])
+      db = get_cached_database(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
       stats = db.get_stats
 
       say "\nDatabase Statistics", :green
@@ -323,7 +353,51 @@ module Ragnar
       say "Ragnar v#{Ragnar::VERSION}"
     end
 
+    desc "clear-cache", "Clear cached instances (useful in interactive mode)"
+    def clear_cache_command
+      clear_cache
+      say "Cache cleared. Next commands will create fresh instances.", :green
+    end
+
     private
+
+    # Cached instance helpers for interactive mode
+    def get_cached_database(db_path = Ragnar::DEFAULT_DB_PATH)
+      # Cache database per path - clear cache if path changes
+      if @@cached_db_path != db_path
+        @@cached_database = nil
+        @@cached_db_path = db_path
+        @@cached_query_processor = nil  # Also clear dependent caches
+      end
+      
+      @@cached_database ||= Database.new(db_path)
+    end
+
+    def get_cached_embedder(model_name = Ragnar::DEFAULT_EMBEDDING_MODEL)
+      # Simple cache - could be enhanced to cache per model
+      @@cached_embedder ||= Embedder.new(model_name: model_name)
+    end
+
+    def get_cached_llm_manager
+      @@cached_llm_manager ||= LLMManager.instance
+    end
+
+    def get_cached_query_processor(db_path = Ragnar::DEFAULT_DB_PATH)
+      # Cache query processor per database path
+      if @@cached_db_path != db_path || @@cached_query_processor.nil?
+        @@cached_query_processor = QueryProcessor.new(db_path: db_path)
+      end
+      
+      @@cached_query_processor
+    end
+
+    def clear_cache
+      @@cached_database = nil
+      @@cached_embedder = nil
+      @@cached_llm_manager = nil
+      @@cached_query_processor = nil
+      @@cached_db_path = nil
+    end
 
     def summarize_topic(topic, llm)
       # Get representative documents for context
