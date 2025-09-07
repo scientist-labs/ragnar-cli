@@ -2,6 +2,7 @@ require_relative "cli_visualization"
 require_relative "config"
 require "thor/interactive"
 require "stringio"
+require "fileutils"
 
 module Ragnar
   class CLI < Thor
@@ -404,6 +405,158 @@ module Ragnar
     def clear_cache_command
       clear_cache
       say "Cache cleared. Next commands will create fresh instances.", :green
+    end
+
+    desc "reset", "Reset Ragnar data (database, models, cache)"
+    option :all, type: :boolean, default: false, aliases: "-a", desc: "Reset everything (database, models, cache)"
+    option :database, type: :boolean, default: false, aliases: "-d", desc: "Reset database only"
+    option :models, type: :boolean, default: false, aliases: "-m", desc: "Reset UMAP models only"
+    option :cache, type: :boolean, default: false, aliases: "-c", desc: "Clear cache only"
+    option :force, type: :boolean, default: false, aliases: "-f", desc: "Skip confirmation prompt"
+    def reset
+      # Determine what to reset
+      reset_all = options[:all]
+      reset_db = options[:database] || reset_all
+      reset_models = options[:models] || reset_all
+      reset_cache = options[:cache] || reset_all
+      
+      # If no specific options, default to all
+      if !reset_db && !reset_models && !reset_cache
+        reset_all = true
+        reset_db = reset_models = reset_cache = true
+      end
+      
+      # Build confirmation message
+      items_to_reset = []
+      items_to_reset << "database" if reset_db
+      items_to_reset << "UMAP models" if reset_models
+      items_to_reset << "cache" if reset_cache
+      
+      # Get paths that will be affected
+      config = Config.instance
+      db_path = options[:db_path] || config.database_path
+      model_path = "umap_model.bin"
+      
+      # Show what will be deleted
+      say "\nWARNING: This will delete the following:", :red
+      say "-" * 40
+      
+      if reset_db
+        say "Database: #{db_path}", :cyan
+        if File.exist?(db_path)
+          stats = Database.new(db_path).get_stats rescue nil
+          if stats
+            say "  (#{stats[:total_documents]} documents, #{stats[:total_chunks]} chunks)", :white
+          end
+        else
+          say "  (does not exist)", :white
+        end
+      end
+      
+      if reset_models
+        say "UMAP models:", :cyan
+        model_files = [
+          model_path,
+          model_path.sub(/\.bin$/, '_metadata.json'),
+          model_path.sub(/\.bin$/, '_embeddings.json')  # Old format, if exists
+        ]
+        model_files.each do |file|
+          if File.exist?(file)
+            say "  #{file} (#{(File.size(file) / 1024.0).round(1)} KB)", :white
+          end
+        end
+        if model_files.none? { |f| File.exist?(f) }
+          say "  (no models found)", :white
+        end
+      end
+      
+      if reset_cache
+        cache_dir = File.expand_path("~/.cache/ragnar")
+        say "Cache directory: #{cache_dir}", :cyan
+        if Dir.exist?(cache_dir)
+          cache_size = Dir.glob(File.join(cache_dir, "**/*"))
+            .select { |f| File.file?(f) }
+            .sum { |f| File.size(f) } / 1024.0 / 1024.0
+          say "  (#{cache_size.round(1)} MB)", :white
+        else
+          say "  (does not exist)", :white
+        end
+      end
+      
+      say "-" * 40
+      
+      # Ask for confirmation unless --force
+      unless options[:force]
+        message = "\nAre you sure you want to reset #{items_to_reset.join(', ')}?"
+        
+        # Check if we're in interactive mode
+        if ENV['THOR_INTERACTIVE_SESSION'] == 'true'
+          # In interactive mode, use a simple prompt
+          say message, :yellow
+          response = ask("Type 'yes' to confirm, anything else to cancel:", :yellow)
+          confirmed = response.downcase == 'yes'
+        else
+          # In CLI mode, use Thor's yes? method
+          confirmed = yes?(message + " (y/N)", :yellow)
+        end
+        
+        unless confirmed
+          say "\nReset cancelled.", :cyan
+          return
+        end
+      end
+      
+      # Perform the reset
+      say "\nResetting...", :green
+      
+      if reset_db && File.exist?(db_path)
+        say "Removing database: #{db_path}"
+        FileUtils.rm_rf(db_path)
+        say "  ✓ Database removed", :green
+      end
+      
+      if reset_models
+        model_files = [
+          model_path,
+          model_path.sub(/\.bin$/, '_metadata.json'),
+          model_path.sub(/\.bin$/, '_embeddings.json')
+        ]
+        model_files.each do |file|
+          if File.exist?(file)
+            say "Removing model file: #{file}"
+            FileUtils.rm_f(file)
+            say "  ✓ Removed", :green
+          end
+        end
+      end
+      
+      if reset_cache
+        # Clear in-memory cache
+        clear_cache
+        
+        # Optionally clear cache directory (but preserve history)
+        cache_dir = File.expand_path("~/.cache/ragnar")
+        if Dir.exist?(cache_dir)
+          # Preserve history file
+          history_file = File.join(cache_dir, "history")
+          history_content = File.read(history_file) if File.exist?(history_file)
+          
+          # Remove cache directory contents except history
+          Dir.glob(File.join(cache_dir, "*")).each do |item|
+            next if File.basename(item) == "history"
+            if File.directory?(item)
+              FileUtils.rm_rf(item)
+            else
+              FileUtils.rm_f(item)
+            end
+            say "Removed cache item: #{File.basename(item)}", :green
+          end
+        end
+        say "  ✓ Cache cleared", :green
+      end
+      
+      say "\nReset complete!", :green
+      say "You can now start fresh with 'ragnar index <path>'", :cyan
     end
 
     desc "init-config", "Generate a configuration file with current defaults"
