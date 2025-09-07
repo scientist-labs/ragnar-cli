@@ -53,7 +53,8 @@ module Ragnar
       end
       
       @umap_model = ClusterKit::Dimensionality::UMAP.load_model(model_path)
-      puts "UMAP model loaded for query transformation"
+      # Only show loading message if in debug mode
+      puts "UMAP model loaded for query transformation" if ENV['DEBUG']
     end
     
     def knn_approximate_transform(query_embedding)

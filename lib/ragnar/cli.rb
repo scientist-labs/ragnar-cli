@@ -1,5 +1,6 @@
 require_relative "cli_visualization"
 require "thor/interactive"
+require "stringio"
 
 module Ragnar
   class CLI < Thor
@@ -10,15 +11,27 @@ module Ragnar
     configure_interactive(
       prompt: "ragnar> ",
       allow_nested: false,
+      history_file: "~/.ragnar_history",
       default_handler: proc do |input, thor_instance|
-        # Route unrecognized input to the query command
-        thor_instance.invoke(:query, [input.strip])
+        puts "[DEBUG] Default handler called: #{input}" if ENV["DEBUG"]
+
+        begin
+          # IMPORTANT: Use direct method call, NOT invoke(), to avoid Thor's
+          # silent deduplication that prevents repeated calls to the same method
+          result = thor_instance.query(input.strip)
+          puts "[DEBUG] Default handler completed" if ENV["DEBUG"]
+          result
+        rescue => e
+          puts "[DEBUG] Default handler error: #{e.message}" if ENV["DEBUG"]
+          puts "[DEBUG] Backtrace: #{e.backtrace.first(3)}" if ENV["DEBUG"]
+          raise e
+        end
       end
     )
 
     # Class variables for caching expensive resources in interactive mode
     class_variable_set(:@@cached_database, nil)
-    class_variable_set(:@@cached_embedder, nil) 
+    class_variable_set(:@@cached_embedder, nil)
     class_variable_set(:@@cached_llm_manager, nil)
     class_variable_set(:@@cached_query_processor, nil)
     class_variable_set(:@@cached_db_path, nil)
@@ -75,15 +88,15 @@ module Ragnar
       say "Training UMAP model on embeddings...", :green
 
       processor = UmapProcessor.new(
-        db_path: options[:db_path],
-        model_path: options[:model_path]
+        db_path: options[:db_path] || Ragnar::DEFAULT_DB_PATH,
+        model_path: options[:model_path] || "umap_model.bin"
       )
 
       begin
         stats = processor.train(
-          n_components: options[:n_components],
-          n_neighbors: options[:n_neighbors],
-          min_dist: options[:min_dist]
+          n_components: options[:n_components] || 50,
+          n_neighbors: options[:n_neighbors] || 15,
+          min_dist: options[:min_dist] || 0.1
         )
 
         say "\nUMAP training complete!", :green
@@ -102,8 +115,10 @@ module Ragnar
     option :model_path, type: :string, default: "umap_model.bin", desc: "Path to UMAP model"
     option :batch_size, type: :numeric, default: 100, desc: "Batch size for processing"
     def apply_umap
-      unless File.exist?(options[:model_path])
-        say "Error: UMAP model not found at: #{options[:model_path]}", :red
+      model_path = options[:model_path] || "umap_model.bin"
+
+      unless File.exist?(model_path)
+        say "Error: UMAP model not found at: #{model_path}", :red
         say "Please run 'train-umap' first to create a model.", :yellow
         exit 1
       end
@@ -111,12 +126,12 @@ module Ragnar
       say "Applying UMAP model to embeddings...", :green
 
       processor = UmapProcessor.new(
-        db_path: options[:db_path],
-        model_path: options[:model_path]
+        db_path: options[:db_path] || Ragnar::DEFAULT_DB_PATH,
+        model_path: model_path
       )
 
       begin
-        stats = processor.apply(batch_size: options[:batch_size])
+        stats = processor.apply(batch_size: options[:batch_size] || 100)
 
         say "\nUMAP application complete!", :green
         say "Embeddings processed: #{stats[:processed]}"
@@ -143,7 +158,7 @@ module Ragnar
       say "Extracting topics from indexed documents...", :green
 
       # Load embeddings and documents from database - use cache in interactive mode
-      database = get_cached_database(options[:db_path])
+      database = get_cached_database(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
 
       begin
         # Get all documents with embeddings
@@ -166,7 +181,7 @@ module Ragnar
         # Check if we have reduced embeddings available
         first_doc = docs_with_embeddings.first
         has_reduced = first_doc[:reduced_embedding] && !first_doc[:reduced_embedding].empty?
-        
+
         if has_reduced
           embeddings = docs_with_embeddings.map { |d| d[:reduced_embedding] }
           say "Using reduced embeddings (#{embeddings.first.size} dimensions)", :yellow if options[:verbose]
@@ -178,7 +193,7 @@ module Ragnar
           # Let the engine handle dimensionality reduction if needed
           reduce_dims = true
         end
-        
+
         documents = docs_with_embeddings.map { |d| d[:chunk_text] }
         metadata = docs_with_embeddings.map { |d| { file_path: d[:file_path], chunk_index: d[:chunk_index] } }
 
@@ -205,17 +220,17 @@ module Ragnar
           say "Generating topic summaries with LLM...", :yellow
           begin
             require 'red-candle'
-            
+
             # Initialize LLM for summarization once
             say "Loading model: #{options[:llm_model]}", :cyan if options[:verbose]
             llm = Candle::LLM.from_pretrained(options[:llm_model], gguf_file: options[:gguf_file])
-            
+
             # Add summaries to topics
             topics.each_with_index do |topic, i|
               say "  Summarizing topic #{i+1}/#{topics.length}...", :yellow if options[:verbose]
               topic.instance_variable_set(:@summary, summarize_topic(topic, llm))
             end
-            
+
             say "Topic summaries generated!", :green
           rescue => e
             say "Warning: Could not generate topic summaries: #{e.message}", :yellow
@@ -244,51 +259,74 @@ module Ragnar
     option :k, type: :numeric, default: 5, desc: "Number of results to return"
     option :show_scores, type: :boolean, default: false, desc: "Show similarity scores"
     def search(query_text)
-      database = get_cached_database(options[:database])
+      database = get_cached_database(options[:database] || Ragnar::DEFAULT_DB_PATH)
       embedder = get_cached_embedder()
-      
+
       # Generate embedding for query
       query_embedding = embedder.embed_text(query_text)
-      
+
       # Search for similar documents
       results = database.search_similar(query_embedding, k: options[:k])
-      
+
       if results.empty?
         say "No results found.", :yellow
         return
       end
-      
+
       say "Found #{results.length} results:\n", :green
-      
+
       results.each_with_index do |result, idx|
         say "#{idx + 1}. File: #{result[:file_path]}", :cyan
         say "   Chunk: #{result[:chunk_index]}"
-        
+
         if options[:show_scores]
           say "   Distance: #{result[:distance].round(4)}"
         end
-        
+
         # Show preview of content
         preview = result[:chunk_text][0..200].gsub(/\s+/, ' ')
         say "   Content: #{preview}..."
         say ""
       end
     end
-    
+
     desc "query QUESTION", "Query the RAG system"
     option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
     def query(question)
+      puts "Debug - Query called with: #{question.inspect}" if ENV['DEBUG']
+      puts "Debug - Options: #{options.inspect}" if ENV['DEBUG']
+
       processor = get_cached_query_processor(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
+      puts "Debug - Processor: #{processor.class}" if ENV['DEBUG']
 
       begin
-        result = processor.query(question, top_k: options[:top_k], verbose: options[:verbose])
+        result = processor.query(question, top_k: options[:top_k] || 3, verbose: options[:verbose] || false)
+        puts "Debug - Result keys: #{result.keys}" if ENV['DEBUG']
 
         if options[:json]
           puts JSON.pretty_generate(result)
+        elsif interactive?
+          # Clean output for interactive mode - just answer, confidence, and sources
+          say "" # Add blank line before answer for spacing
+          say result[:answer]
+          
+          if result[:confidence]
+            say "\nConfidence: #{result[:confidence]}%", :magenta
+          end
+
+          if result[:sources] && !result[:sources].empty?
+            say "\nSources:", :blue
+            result[:sources].each_with_index do |source, idx|
+              say "  #{idx + 1}. #{source[:source_file]}" if source[:source_file]
+            end
+          end
+          
+          say "" # Add blank line for spacing
         else
+          # Full output for CLI mode
           say "\n" + "="*60, :green
           say "Query: #{result[:query]}", :cyan
 
@@ -310,7 +348,7 @@ module Ragnar
             end
           end
 
-          if options[:verbose] && result[:sub_queries]
+          if (options[:verbose] || false) && result[:sub_queries]
             say "\nSub-queries used:", :yellow
             result[:sub_queries].each { |sq| say "  - #{sq}" }
           end
@@ -319,7 +357,7 @@ module Ragnar
         end
       rescue => e
         say "Error processing query: #{e.message}", :red
-        say e.backtrace.first(5).join("\n") if options[:verbose]
+        puts "Debug - Full backtrace: #{e.backtrace.join("\n")}" if ENV['DEBUG']
         exit 1
       end
     end
@@ -369,7 +407,7 @@ module Ragnar
         @@cached_db_path = db_path
         @@cached_query_processor = nil  # Also clear dependent caches
       end
-      
+
       @@cached_database ||= Database.new(db_path)
     end
 
@@ -387,7 +425,7 @@ module Ragnar
       if @@cached_db_path != db_path || @@cached_query_processor.nil?
         @@cached_query_processor = QueryProcessor.new(db_path: db_path)
       end
-      
+
       @@cached_query_processor
     end
 
@@ -399,22 +437,23 @@ module Ragnar
       @@cached_db_path = nil
     end
 
+
     def summarize_topic(topic, llm)
       # Get representative documents for context
       sample_docs = topic.representative_docs(k: 3)
-      
+
       # Simple, clear prompt for summarization
       prompt = <<~PROMPT
         Summarize what connects these documents in 1-2 sentences:
-        
+
         Key terms: #{topic.terms.first(5).join(', ')}
-        
+
         Documents:
         #{sample_docs.map.with_index { |doc, i| "#{i+1}. #{doc}" }.join("\n")}
-        
+
         Summary:
       PROMPT
-      
+
       begin
         summary = llm.generate(prompt).strip
         # Clean up common artifacts
