@@ -1,4 +1,5 @@
 require_relative "cli_visualization"
+require_relative "config"
 require "thor/interactive"
 require "stringio"
 
@@ -9,9 +10,9 @@ module Ragnar
 
     # Configure interactive mode
     configure_interactive(
-      prompt: "ragnar> ",
+      prompt: Config.instance.interactive_prompt,
       allow_nested: false,
-      history_file: "~/.ragnar_history",
+      history_file: Config.instance.history_file,
       default_handler: proc do |input, thor_instance|
         puts "[DEBUG] Default handler called: #{input}" if ENV["DEBUG"]
 
@@ -37,13 +38,16 @@ module Ragnar
     class_variable_set(:@@cached_db_path, nil)
 
     desc "index PATH", "Index text files from PATH (file or directory)"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
-    option :chunk_size, type: :numeric, default: Ragnar::DEFAULT_CHUNK_SIZE, desc: "Chunk size in tokens"
-    option :chunk_overlap, type: :numeric, default: Ragnar::DEFAULT_CHUNK_OVERLAP, desc: "Chunk overlap in tokens"
-    option :model, type: :string, default: Ragnar::DEFAULT_EMBEDDING_MODEL, desc: "Embedding model to use"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
+    option :chunk_size, type: :numeric, desc: "Chunk size in tokens (default from config)"
+    option :chunk_overlap, type: :numeric, desc: "Chunk overlap in tokens (default from config)"
+    option :model, type: :string, desc: "Embedding model to use (default from config)"
     def index(path)
-      unless File.exist?(path)
-        say "Error: Path does not exist: #{path}", :red
+      # Expand user paths (handle ~ in user input)
+      expanded_path = File.expand_path(path)
+      
+      unless File.exist?(expanded_path)
+        say "Error: Path does not exist: #{expanded_path}", :red
         exit 1
       end
 
@@ -52,8 +56,11 @@ module Ragnar
       # Debug options in interactive mode
       puts "Debug - options: #{options.inspect}" if ENV['DEBUG']
 
+      # Get config instance
+      config = Config.instance
+      
       # Clear database cache when indexing new content
-      db_path = options[:db_path] || Ragnar::DEFAULT_DB_PATH
+      db_path = options[:db_path] || config.database_path
       if @@cached_db_path == db_path
         @@cached_database = nil
         @@cached_query_processor = nil
@@ -61,13 +68,13 @@ module Ragnar
 
       indexer = Indexer.new(
         db_path: db_path,
-        chunk_size: options[:chunk_size] || Ragnar::DEFAULT_CHUNK_SIZE,
-        chunk_overlap: options[:chunk_overlap] || Ragnar::DEFAULT_CHUNK_OVERLAP,
-        embedding_model: options[:model] || Ragnar::DEFAULT_EMBEDDING_MODEL
+        chunk_size: options[:chunk_size] || config.chunk_size,
+        chunk_overlap: options[:chunk_overlap] || config.chunk_overlap,
+        embedding_model: options[:model] || config.embedding_model
       )
 
       begin
-        stats = indexer.index_path(path)
+        stats = indexer.index_path(expanded_path)
         say "\nIndexing complete!", :green
         say "Files processed: #{stats[:files_processed]}"
         say "Chunks created: #{stats[:chunks_created]}"
@@ -87,9 +94,10 @@ module Ragnar
     def train_umap
       say "Training UMAP model on embeddings...", :green
 
+      config = Config.instance
       processor = UmapProcessor.new(
-        db_path: options[:db_path] || Ragnar::DEFAULT_DB_PATH,
-        model_path: options[:model_path] || "umap_model.bin"
+        db_path: options[:db_path] || config.database_path,
+        model_path: options[:model_path] || File.join(config.models_dir, "umap_model.bin")
       )
 
       begin
@@ -115,7 +123,8 @@ module Ragnar
     option :model_path, type: :string, default: "umap_model.bin", desc: "Path to UMAP model"
     option :batch_size, type: :numeric, default: 100, desc: "Batch size for processing"
     def apply_umap
-      model_path = options[:model_path] || "umap_model.bin"
+      config = Config.instance
+      model_path = options[:model_path] || File.join(config.models_dir, "umap_model.bin")
 
       unless File.exist?(model_path)
         say "Error: UMAP model not found at: #{model_path}", :red
@@ -126,7 +135,7 @@ module Ragnar
       say "Applying UMAP model to embeddings...", :green
 
       processor = UmapProcessor.new(
-        db_path: options[:db_path] || Ragnar::DEFAULT_DB_PATH,
+        db_path: options[:db_path] || config.database_path,
         model_path: model_path
       )
 
@@ -158,7 +167,7 @@ module Ragnar
       say "Extracting topics from indexed documents...", :green
 
       # Load embeddings and documents from database - use cache in interactive mode
-      database = get_cached_database(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
+      database = get_cached_database(options[:db_path] || Config.instance.database_path)
 
       begin
         # Get all documents with embeddings
@@ -259,7 +268,7 @@ module Ragnar
     option :k, type: :numeric, default: 5, desc: "Number of results to return"
     option :show_scores, type: :boolean, default: false, desc: "Show similarity scores"
     def search(query_text)
-      database = get_cached_database(options[:database] || Ragnar::DEFAULT_DB_PATH)
+      database = get_cached_database(options[:database] || Config.instance.database_path)
       embedder = get_cached_embedder()
 
       # Generate embedding for query
@@ -299,7 +308,7 @@ module Ragnar
       puts "Debug - Query called with: #{question.inspect}" if ENV['DEBUG']
       puts "Debug - Options: #{options.inspect}" if ENV['DEBUG']
 
-      processor = get_cached_query_processor(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
+      processor = get_cached_query_processor(options[:db_path] || Config.instance.database_path)
       puts "Debug - Processor: #{processor.class}" if ENV['DEBUG']
 
       begin
@@ -365,7 +374,7 @@ module Ragnar
     desc "stats", "Show database statistics"
     option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
     def stats
-      db = get_cached_database(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
+      db = get_cached_database(options[:db_path] || Config.instance.database_path)
       stats = db.get_stats
 
       say "\nDatabase Statistics", :green
@@ -397,10 +406,40 @@ module Ragnar
       say "Cache cleared. Next commands will create fresh instances.", :green
     end
 
+    desc "init-config", "Generate a configuration file with current defaults"
+    option :global, type: :boolean, default: false, aliases: "-g", desc: "Create global config in home directory"
+    option :force, type: :boolean, default: false, aliases: "-f", desc: "Overwrite existing config file"
+    def init_config
+      config = Config.instance
+      
+      if options[:global]
+        config_path = File.expand_path('~/.ragnar.yml')
+      else
+        config_path = File.join(Dir.pwd, '.ragnar.yml')
+      end
+      
+      if File.exist?(config_path) && !options[:force]
+        say "Config file already exists at: #{config_path}", :yellow
+        say "Use --force to overwrite, or choose a different location.", :yellow
+        return
+      end
+      
+      generated_path = config.generate_config_file(config_path)
+      say "Config file created at: #{generated_path}", :green
+      say "Edit this file to customize Ragnar's behavior.", :cyan
+      
+      if config.config_exists?
+        say "\nNote: Currently using config from: #{config.config_file_path}", :yellow
+      end
+    end
+
     private
 
     # Cached instance helpers for interactive mode
-    def get_cached_database(db_path = Ragnar::DEFAULT_DB_PATH)
+    def get_cached_database(db_path = nil)
+      # Use config default if no path provided
+      db_path ||= Config.instance.database_path
+      
       # Cache database per path - clear cache if path changes
       if @@cached_db_path != db_path
         @@cached_database = nil
@@ -411,8 +450,9 @@ module Ragnar
       @@cached_database ||= Database.new(db_path)
     end
 
-    def get_cached_embedder(model_name = Ragnar::DEFAULT_EMBEDDING_MODEL)
-      # Simple cache - could be enhanced to cache per model
+    def get_cached_embedder(model_name = nil)
+      # Use config default if no model specified
+      model_name ||= Config.instance.embedding_model
       @@cached_embedder ||= Embedder.new(model_name: model_name)
     end
 
@@ -420,7 +460,10 @@ module Ragnar
       @@cached_llm_manager ||= LLMManager.instance
     end
 
-    def get_cached_query_processor(db_path = Ragnar::DEFAULT_DB_PATH)
+    def get_cached_query_processor(db_path = nil)
+      # Use config default if no path provided
+      db_path ||= Config.instance.database_path
+      
       # Cache query processor per database path
       if @@cached_db_path != db_path || @@cached_query_processor.nil?
         @@cached_query_processor = QueryProcessor.new(db_path: db_path)

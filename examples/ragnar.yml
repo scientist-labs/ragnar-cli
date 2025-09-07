@@ -1,0 +1,89 @@
+# Ragnar Configuration File
+# Save as .ragnar.yml in your project directory or ~/.ragnar.yml for global config
+
+# Storage locations (uses XDG Base Directory Specification)
+storage:
+  # Database location - will be created if it doesn't exist
+  database_path: "~/.cache/ragnar/database"
+  
+  # Ragnar-specific models (UMAP models, etc.)
+  # NOTE: HuggingFace/embedding models use their own cache automatically
+  models_dir: "~/.cache/ragnar/models"
+  
+  # Interactive shell history
+  history_file: "~/.cache/ragnar/history"
+
+# Default embedding settings
+embeddings:
+  # Default embedding model
+  model: "jinaai/jina-embeddings-v2-base-en"
+  
+  # Chunking settings
+  chunk_size: 512
+  chunk_overlap: 50
+
+# UMAP dimensionality reduction settings  
+umap:
+  # Target dimensions for reduction
+  reduced_dimensions: 64
+  
+  # Training parameters
+  n_neighbors: 15
+  min_dist: 0.1
+  
+  # Default model filename
+  model_filename: "umap_model.bin"
+
+# LLM settings for query answering and topic summarization
+llm:
+  # Default LLM for queries
+  default_model: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+  default_gguf_file: "tinyllama-1.1b-chat-v1.0.q4_k_m.gguf"
+  
+  # Topic summarization LLM (can be different for performance)
+  topic_model: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF" 
+  topic_gguf_file: "tinyllama-1.1b-chat-v1.0.q4_k_m.gguf"
+
+# Query processing settings
+query:
+  # Number of documents to retrieve for context
+  top_k: 3
+  
+  # Context optimization
+  max_context_tokens: 2000
+  
+  # Query rewriting
+  enable_query_rewriting: true
+
+# Topic modeling settings
+topics:
+  # Minimum cluster size for topic detection
+  min_cluster_size: 5
+  
+  # Labeling method: fast, quality, or hybrid  
+  labeling_method: "hybrid"
+  
+  # Enable automatic topic summarization
+  auto_summarize: false
+
+# Interactive mode settings
+interactive:
+  # Custom prompt
+  prompt: "ragnar> "
+  
+  # Suppress verbose loading messages
+  quiet_mode: true
+  
+  # Auto-save conversation history
+  save_history: true
+
+# Output settings
+output:
+  # Show progress bars during operations
+  show_progress: true
+  
+  # Use colors in output
+  use_colors: true
+  
+  # Verbosity level: quiet, normal, verbose
+  default_verbosity: "normal"
