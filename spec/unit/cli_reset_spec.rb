@@ -6,15 +6,17 @@ require "fileutils"
 RSpec.describe "Ragnar::CLI reset command" do
   let(:cli) { Ragnar::CLI.new }
   let(:db_path) { "./ragnar_database" }
-  let(:model_path) { "umap_model.bin" }
-  let(:metadata_path) { "umap_model_metadata.json" }
-  let(:embeddings_path) { "umap_model_embeddings.json" }
+  let(:models_dir) { File.expand_path("~/.cache/ragnar/models") }
+  let(:model_path) { File.join(models_dir, "umap_model.bin") }
+  let(:metadata_path) { model_path.sub(/\.bin$/, '_metadata.json') }
+  let(:embeddings_path) { model_path.sub(/\.bin$/, '_embeddings.json') }
   let(:cache_dir) { File.expand_path("~/.cache/ragnar") }
   
   before do
     # Mock the Config instance
     config = instance_double(Ragnar::Config)
     allow(config).to receive(:database_path).and_return(db_path)
+    allow(config).to receive(:models_dir).and_return(models_dir)
     allow(Ragnar::Config).to receive(:instance).and_return(config)
     
     # Silence output during tests

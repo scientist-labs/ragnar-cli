@@ -112,7 +112,7 @@ module Ragnar
         say "Embeddings processed: #{stats[:embeddings_count]}"
         say "Original dimensions: #{stats[:original_dims]}"
         say "Reduced dimensions: #{stats[:reduced_dims]}"
-        say "Model saved to: #{options[:model_path]}"
+        say "Model saved to: #{processor.model_path}"
       rescue => e
         say "Error during UMAP training: #{e.message}", :red
         exit 1
@@ -435,7 +435,7 @@ module Ragnar
       # Get paths that will be affected
       config = Config.instance
       db_path = options[:db_path] || config.database_path
-      model_path = "umap_model.bin"
+      model_path = File.join(config.models_dir, "umap_model.bin")
       
       # Show what will be deleted
       say "\nWARNING: This will delete the following:", :red

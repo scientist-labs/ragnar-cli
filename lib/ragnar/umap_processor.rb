@@ -1,4 +1,5 @@
 require 'json'
+require 'time'
 
 module Ragnar
   class UmapProcessor
