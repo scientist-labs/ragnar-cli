@@ -275,6 +275,37 @@ module Ragnar
       end
     end
     
+    # Get the total number of documents in the database
+    def document_count
+      count
+    end
+    
+    # Get documents by their IDs
+    # @param ids [Array<String>] Document IDs to fetch
+    # @return [Array<Hash>] Documents with their embeddings
+    def get_documents_by_ids(ids)
+      return [] if ids.empty? || !dataset_exists?
+      
+      dataset = cached_dataset
+      return [] unless dataset
+      
+      # Create ID lookup set for efficiency
+      id_set = ids.to_set
+      
+      # Filter documents by IDs
+      dataset.to_a.select { |doc| id_set.include?(doc[:id]) }.map do |doc|
+        {
+          id: doc[:id],
+          chunk_text: doc[:chunk_text],
+          file_path: doc[:file_path],
+          chunk_index: doc[:chunk_index],
+          embedding: doc[:embedding],
+          reduced_embedding: doc[:reduced_embedding],
+          metadata: JSON.parse(doc[:metadata] || "{}")
+        }
+      end
+    end
+    
     def dataset_exists?
       return false unless File.exist?(@db_path)
       

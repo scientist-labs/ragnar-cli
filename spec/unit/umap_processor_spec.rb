@@ -157,16 +157,18 @@ RSpec.describe Ragnar::UmapProcessor do
   end
 
   describe "#apply" do
+    let(:umap_model) { instance_double(ClusterKit::Dimensionality::UMAP) }
     let(:reduced_embeddings) { Array.new(15) { Array.new(50, 0.5) } }
 
     before do
-      # Mock loading saved model
-      allow(processor).to receive(:load_model).and_return(reduced_embeddings)
+      # Mock loading UMAP model
+      allow(processor).to receive(:load_umap_model).and_return(umap_model)
+      allow(umap_model).to receive(:transform).and_return(reduced_embeddings)
       allow_any_instance_of(Ragnar::UmapProcessor).to receive(:puts)
     end
 
-    context "with matching embeddings" do
-      it "applies reduced embeddings to database" do
+    context "with valid embeddings" do
+      it "transforms and applies reduced embeddings to database" do
         # Mock the specific database instance
         allow(processor.database).to receive(:update_reduced_embeddings)
         
@@ -178,6 +180,9 @@ RSpec.describe Ragnar::UmapProcessor do
           errors: 0
         })
 
+        # Verify UMAP transform was called
+        expect(umap_model).to have_received(:transform).with(kind_of(Array))
+        
         # Verify database was updated with reduced embeddings
         expect(processor.database).to have_received(:update_reduced_embeddings).with(
           array_including(
@@ -210,33 +215,40 @@ RSpec.describe Ragnar::UmapProcessor do
       end
     end
 
-    context "with mismatched embedding counts" do
+    context "with invalid embeddings" do
       before do
-        # Model has different number of embeddings than database
-        different_reduced = Array.new(10) { Array.new(50, 0.5) }
-        allow(processor).to receive(:load_model).and_return(different_reduced)
+        # Add some invalid embeddings to the test data
+        invalid_docs = [
+          { id: "invalid_1", embedding: nil },
+          { id: "invalid_2", embedding: [1.0, Float::NAN, 3.0] },
+          { id: "invalid_3", embedding: [1.0, Float::INFINITY, 3.0] }
+        ]
+        all_docs = sample_docs + invalid_docs
+        allow_any_instance_of(Ragnar::Database).to receive(:get_embeddings).and_return(all_docs)
+        
+        # Transform only returns results for valid embeddings
+        valid_reduced = Array.new(15) { Array.new(50, 0.5) }
+        allow(umap_model).to receive(:transform).and_return(valid_reduced)
       end
 
-      it "reports mismatch error" do
+      it "skips invalid embeddings and processes valid ones" do
         result = processor.apply
 
-        expect(result).to eq({
-          processed: 0,
-          skipped: 0,
-          errors: 1
-        })
+        expect(result[:processed]).to eq(15)
+        expect(result[:skipped]).to eq(3)
+        expect(result[:errors]).to eq(0)
       end
     end
 
     context "when model loading fails" do
       before do
-        allow(processor).to receive(:load_model).and_raise("Model not found")
+        allow(processor).to receive(:load_umap_model).and_raise("UMAP model not found")
       end
 
       it "raises error for missing model" do
         expect {
           processor.apply
-        }.to raise_error("Model not found")
+        }.to raise_error("UMAP model not found")
       end
     end
   end
@@ -265,23 +277,30 @@ RSpec.describe Ragnar::UmapProcessor do
       let(:mock_umap) { double("UMAP") }
       
       before do
-        # Set up processor with mocked UMAP instance and results
+        # Set up processor with mocked UMAP instance and params
         processor.instance_variable_set(:@umap_instance, mock_umap)
-        processor.instance_variable_set(:@reduced_embeddings, reduced_embeddings)
+        processor.instance_variable_set(:@model_params, {
+          n_components: 50,
+          n_neighbors: 15,
+          min_dist: 0.1
+        })
         
         allow(mock_umap).to receive(:save_model)
-        allow(ClusterKit::Dimensionality::UMAP).to receive(:save_data)
+        allow(File).to receive(:write)
         allow_any_instance_of(Ragnar::UmapProcessor).to receive(:puts)
+        allow_any_instance_of(Ragnar::Database).to receive(:get_embeddings).and_return(sample_docs)
       end
 
-      it "saves both model and embeddings" do
+      it "saves model and metadata" do
         processor.send(:save_model)
 
         expect(mock_umap).to have_received(:save_model).with(model_path)
         
-        embeddings_path = model_path.sub(/\.bin$/, '_embeddings.json')
-        expect(ClusterKit::Dimensionality::UMAP).to have_received(:save_data)
-          .with(reduced_embeddings, embeddings_path)
+        metadata_path = model_path.sub(/\.bin$/, '_metadata.json')
+        expect(File).to have_received(:write).with(
+          metadata_path,
+          kind_of(String)
+        )
       end
 
       it "skips saving when no model or embeddings" do
@@ -295,41 +314,8 @@ RSpec.describe Ragnar::UmapProcessor do
       end
     end
 
-    describe "#load_model" do
-      let(:embeddings_path) { model_path.sub(/\.bin$/, '_embeddings.json') }
-
-      before do
-        # Use call_original for File.exist? by default, only stub specific path
-        allow(File).to receive(:exist?).and_call_original
-        allow(File).to receive(:exist?).with(embeddings_path).and_return(true)
-        allow(ClusterKit::Dimensionality::UMAP).to receive(:load_data).and_return(reduced_embeddings)
-        allow_any_instance_of(Ragnar::UmapProcessor).to receive(:puts)
-      end
-
-      it "loads cached embeddings from file" do
-        result = processor.send(:load_model)
-
-        expect(result).to eq(reduced_embeddings)
-        expect(ClusterKit::Dimensionality::UMAP).to have_received(:load_data).with(embeddings_path)
-      end
-
-      it "caches loaded embeddings for subsequent calls" do
-        processor.send(:load_model)
-        processor.send(:load_model)
-
-        # Should only call load_data once due to caching
-        expect(ClusterKit::Dimensionality::UMAP).to have_received(:load_data).once
-      end
-
-      it "raises error when embeddings file not found" do
-        # Override the specific stub for this test
-        allow(File).to receive(:exist?).with(embeddings_path).and_return(false)
-
-        expect {
-          processor.send(:load_model)
-        }.to raise_error(/Cached embeddings not found/)
-      end
-    end
+    # Note: load_model method has been removed in the new implementation
+    # as we now use load_umap_model to load the actual UMAP model for transformation
 
     describe "#load_umap_model" do
       let(:mock_umap_model) { double("UMAP Model") }

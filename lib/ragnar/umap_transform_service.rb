@@ -1,125 +1,205 @@
+require 'json'
 require 'clusterkit'
 
 module Ragnar
+  # Service for applying UMAP transformations to embeddings
+  # Separates transformation logic from training (UmapProcessor)
   class UmapTransformService
-    include Singleton
+    attr_reader :model_path, :database
     
-    def initialize
+    def initialize(model_path: "umap_model.bin", database:)
+      @model_path = model_path
+      @database = database
       @umap_model = nil
-      @model_path = "umap_model.bin"
+      @model_metadata = nil
     end
     
-    # Transform a query embedding to reduced space using saved UMAP model
-    def transform_query(query_embedding, model_path = nil)
-      # Use the real UMAP model's transform capability
-      model_path ||= @model_path
+    # Transform embeddings for specific documents
+    # @param document_ids [Array<Integer>] IDs of documents to transform
+    # @return [Hash] Results with :processed, :skipped, :errors counts
+    def transform_documents(document_ids)
+      return { processed: 0, skipped: 0, errors: 0 } if document_ids.empty?
       
-      # Load the model if not already loaded
-      load_model(model_path) unless @umap_model
+      load_model!
       
-      # Transform the query embedding using the trained UMAP model
-      # The transform method expects a 2D array (even for a single embedding)
-      result = @umap_model.transform([query_embedding])
+      # Fetch documents
+      documents = @database.get_documents_by_ids(document_ids)
       
-      # Return the first (and only) transformed embedding
-      result.first
-    rescue => e
-      # Fall back to k-NN approximation if model loading fails
-      puts "Warning: Could not use UMAP model for transform: #{e.message}"
-      puts "Falling back to k-NN approximation..."
-      knn_approximate_transform(query_embedding)
-    end
-    
-    # Check if we can do transforms
-    def model_available?(model_path = nil)
-      model_path ||= @model_path
-      
-      # First check if the actual UMAP model file exists
-      if File.exist?(model_path)
-        return true
+      if documents.empty?
+        return { processed: 0, skipped: 0, errors: 0 }
       end
       
-      # Fallback: check if the database has reduced embeddings for k-NN approximation
-      database = Database.new("./rag_database")
-      stats = database.get_stats
-      stats[:with_reduced_embeddings] > 0
+      # Extract and validate embeddings
+      valid_docs = []
+      embeddings_to_transform = []
+      skipped_count = 0
+      
+      documents.each do |doc|
+        emb = doc[:embedding]
+        
+        if emb.nil? || !emb.is_a?(Array) || emb.empty?
+          skipped_count += 1
+          next
+        end
+        
+        if emb.any? { |v| !v.is_a?(Numeric) || v.nan? || !v.finite? }
+          skipped_count += 1
+          next
+        end
+        
+        valid_docs << doc
+        embeddings_to_transform << emb
+      end
+      
+      return { processed: 0, skipped: skipped_count, errors: 0 } if embeddings_to_transform.empty?
+      
+      # Transform using UMAP
+      begin
+        reduced_embeddings = @umap_model.transform(embeddings_to_transform)
+        
+        # Prepare updates
+        updates = valid_docs.zip(reduced_embeddings).map do |doc, reduced_emb|
+          {
+            id: doc[:id],
+            reduced_embedding: reduced_emb,
+            umap_version: model_version
+          }
+        end
+        
+        # Update database
+        @database.update_reduced_embeddings(updates)
+        
+        { processed: updates.size, skipped: skipped_count, errors: 0 }
+      rescue => e
+        puts "Error transforming documents: #{e.message}"
+        { processed: 0, skipped: skipped_count, errors: valid_docs.size }
+      end
+    end
+    
+    # Transform a single query embedding
+    # @param embedding [Array<Numeric>] Query embedding to transform
+    # @return [Array<Float>, nil] Reduced embedding or nil if error
+    def transform_query(embedding)
+      return nil if embedding.nil? || !embedding.is_a?(Array) || embedding.empty?
+      
+      # Validate embedding
+      if embedding.any? { |v| !v.is_a?(Numeric) || v.nan? || !v.finite? }
+        puts "Warning: Invalid query embedding (contains NaN or Infinity)"
+        return nil
+      end
+      
+      load_model!
+      
+      begin
+        # Transform returns array of arrays, get first (and only) result
+        @umap_model.transform([embedding]).first
+      rescue => e
+        puts "Error transforming query: #{e.message}"
+        nil
+      end
+    end
+    
+    # Check if a UMAP model exists
+    # @return [Boolean] true if model file exists
+    def model_exists?
+      File.exist?(@model_path)
+    end
+    
+    # Get metadata about the trained model
+    # @return [Hash, nil] Model metadata or nil if not found
+    def model_metadata
+      return @model_metadata if @model_metadata
+      
+      metadata_path = @model_path.sub(/\.bin$/, '_metadata.json')
+      return nil unless File.exist?(metadata_path)
+      
+      @model_metadata = JSON.parse(File.read(metadata_path), symbolize_names: true)
+    rescue => e
+      puts "Error loading model metadata: #{e.message}"
+      nil
+    end
+    
+    # Get the version of the current model
+    # @return [Integer] Model version (timestamp of file modification)
+    def model_version
+      return 0 unless File.exist?(@model_path)
+      File.mtime(@model_path).to_i
+    end
+    
+    # Check if model needs retraining based on staleness
+    # @return [Hash] Staleness info with :needs_retraining, :coverage_percentage
+    def check_model_staleness
+      return { needs_retraining: true, coverage_percentage: 0, reason: "No model exists" } unless model_exists?
+      
+      metadata = model_metadata
+      return { needs_retraining: true, coverage_percentage: 0, reason: "No metadata found" } unless metadata
+      
+      trained_count = metadata[:document_count] || 0
+      current_count = @database.document_count
+      
+      if current_count == 0
+        return { needs_retraining: false, coverage_percentage: 100, reason: "No documents" }
+      end
+      
+      coverage = (trained_count.to_f / current_count * 100).round(1)
+      staleness = 100 - coverage
+      
+      {
+        needs_retraining: staleness > 30,
+        coverage_percentage: coverage,
+        trained_documents: trained_count,
+        current_documents: current_count,
+        staleness_percentage: staleness,
+        reason: staleness > 30 ? "Model covers only #{coverage}% of documents" : "Model is up to date"
+      }
     end
     
     private
     
-    def load_model(model_path)
-      unless File.exist?(model_path)
-        raise "UMAP model not found at #{model_path}. Please train a model first."
+    def load_model!
+      return if @umap_model
+      
+      unless File.exist?(@model_path)
+        raise "UMAP model not found at #{@model_path}. Please train a model first using 'ragnar train-umap'."
       end
       
-      @umap_model = ClusterKit::Dimensionality::UMAP.load_model(model_path)
-      # Only show loading message if in debug mode
-      puts "UMAP model loaded for query transformation" if ENV['DEBUG']
+      @umap_model = ClusterKit::Dimensionality::UMAP.load_model(@model_path)
+    end
+  end
+  
+  # Singleton service for backwards compatibility
+  # This allows the old UmapTransformService.instance pattern to work
+  class UmapTransformServiceSingleton
+    include Singleton
+    
+    def initialize
+      @database = Database.new(Config.instance.database_path)
+      @service = UmapTransformService.new(database: @database)
     end
     
-    def knn_approximate_transform(query_embedding)
-      # Fallback k-NN approximation method
-      # Get database stats to know dimensions
-      database = Database.new("./rag_database")
-      stats = database.get_stats
-      
-      # If we don't have reduced embeddings, we can't transform
-      if stats[:with_reduced_embeddings] == 0
-        raise "No reduced embeddings available in database"
+    def transform_query(embedding, model_path = nil)
+      if model_path && model_path != @service.model_path
+        # Create a new service with different model path
+        service = UmapTransformService.new(model_path: model_path, database: @database)
+        service.transform_query(embedding)
+      else
+        @service.transform_query(embedding)
       end
-      
-      # Get all documents with their embeddings
-      all_docs = database.get_embeddings
-      
-      # Find k nearest neighbors in full embedding space
-      k = 5
-      neighbors = []
-      
-      all_docs.each_with_index do |doc, idx|
-        next unless doc[:embedding] && doc[:reduced_embedding]
-        
-        distance = euclidean_distance(query_embedding, doc[:embedding])
-        neighbors << { idx: idx, distance: distance, reduced: doc[:reduced_embedding] }
-      end
-      
-      # Sort by distance and take k nearest
-      neighbors.sort_by! { |n| n[:distance] }
-      k_nearest = neighbors.first(k)
-      
-      # Average the reduced embeddings of k nearest neighbors
-      # This is a simple approximation of the transform
-      if k_nearest.empty?
-        raise "No neighbors found for transform"
-      end
-      
-      reduced_dims = k_nearest.first[:reduced].size
-      averaged = Array.new(reduced_dims, 0.0)
-      
-      # Weighted average based on inverse distance
-      total_weight = 0.0
-      k_nearest.each do |neighbor|
-        # Use inverse distance as weight (closer = higher weight)
-        weight = 1.0 / (neighbor[:distance] + 0.001) # Add small epsilon to avoid division by zero
-        total_weight += weight
-        
-        neighbor[:reduced].each_with_index do |val, idx|
-          averaged[idx] += val * weight
-        end
-      end
-      
-      # Normalize by total weight
-      averaged.map { |val| val / total_weight }
     end
     
-    def euclidean_distance(vec1, vec2)
-      return Float::INFINITY if vec1.size != vec2.size
-      
-      sum = 0.0
-      vec1.each_with_index do |val, idx|
-        diff = val - vec2[idx]
-        sum += diff * diff
+    def model_available?(model_path = nil)
+      if model_path
+        File.exist?(model_path)
+      else
+        @service.model_exists?
       end
-      Math.sqrt(sum)
+    end
+  end
+  
+  # For backwards compatibility - old code uses UmapTransformService.instance
+  class << UmapTransformService
+    def instance
+      UmapTransformServiceSingleton.instance
     end
   end
 end

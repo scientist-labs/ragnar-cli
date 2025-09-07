@@ -196,10 +196,10 @@ module Ragnar
     end
     
     def apply(batch_size: 100)
-      # Load the trained UMAP model (reduced embeddings)
-      reduced_embeddings = load_model
+      # Load the trained UMAP model
+      umap_model = load_umap_model
       
-      puts "Applying saved UMAP embeddings to database..."
+      puts "Applying UMAP transformation to database documents..."
       
       # Get all embeddings from database
       all_docs = @database.get_embeddings
@@ -214,84 +214,95 @@ module Ragnar
       end
       
       puts "Found #{all_docs.size} documents in database"
-      puts "Loaded #{reduced_embeddings.size} reduced embeddings from model"
       
-      if all_docs.size != reduced_embeddings.size
-        puts "⚠️  Warning: Mismatch between database documents (#{all_docs.size}) and model embeddings (#{reduced_embeddings.size})"
-        puts "   This suggests the model was trained on a different dataset."
-        puts "   Please retrain the UMAP model after indexing all your documents."
-        return {
-          processed: 0,
-          skipped: 0,
-          errors: 1
-        }
+      # Process in batches for memory efficiency
+      processed_count = 0
+      error_count = 0
+      skipped_count = 0
+      
+      all_docs.each_slice(batch_size) do |batch|
+        begin
+          # Extract embeddings
+          embeddings = batch.map { |d| d[:embedding] }
+          
+          # Validate embeddings
+          valid_indices = []
+          embeddings_to_transform = []
+          
+          embeddings.each_with_index do |emb, idx|
+            if emb.nil? || !emb.is_a?(Array) || emb.empty?
+              skipped_count += 1
+              next
+            end
+            
+            if emb.any? { |v| !v.is_a?(Numeric) || v.nan? || !v.finite? }
+              skipped_count += 1
+              next
+            end
+            
+            valid_indices << idx
+            embeddings_to_transform << emb
+          end
+          
+          next if embeddings_to_transform.empty?
+          
+          # Transform using the loaded UMAP model
+          reduced_embeddings = umap_model.transform(embeddings_to_transform)
+          
+          # Prepare updates for valid documents
+          updates = valid_indices.map.with_index do |batch_idx, transform_idx|
+            {
+              id: batch[batch_idx][:id],
+              reduced_embedding: reduced_embeddings[transform_idx]
+            }
+          end
+          
+          # Update database
+          @database.update_reduced_embeddings(updates)
+          processed_count += updates.size
+          
+          puts "  Processed batch: #{updates.size} documents transformed"
+        rescue => e
+          puts "  ⚠️  Error processing batch: #{e.message}"
+          error_count += batch.size
+        end
       end
       
-      # Prepare updates - match document IDs to reduced embeddings
-      updates = all_docs.each_with_index.map do |doc, idx|
-        {
-          id: doc[:id],
-          reduced_embedding: reduced_embeddings[idx]
-        }
-      end
-      
-      puts "Updating database with reduced embeddings..."
-      @database.update_reduced_embeddings(updates)
+      puts "\nUMAP application complete:"
+      puts "  ✓ Processed: #{processed_count} documents"
+      puts "  ⚠️  Skipped: #{skipped_count} documents (invalid embeddings)" if skipped_count > 0
+      puts "  ❌ Errors: #{error_count} documents" if error_count > 0
       
       {
-        processed: updates.size,
-        skipped: 0,
-        errors: 0
+        processed: processed_count,
+        skipped: skipped_count,
+        errors: error_count
       }
     end
     
     private
     
-    def process_batch(docs)
-      # Extract embeddings
-      embeddings = docs.map { |d| d[:embedding] }
-      
-      # Transform using UMAP
-      # The transform method returns a 2D array where each row is a reduced embedding
-      reduced = @umap_model.transform(embeddings)
-      
-      # Prepare updates
-      updates = docs.each_with_index.map do |doc, idx|
-        {
-          id: doc[:id],
-          reduced_embedding: reduced[idx]
-        }
-      end
-      
-      # Update database
-      @database.update_reduced_embeddings(updates)
-    end
-    
     def save_model
-      return unless @umap_instance && @reduced_embeddings
+      return unless @umap_instance
       
-      # Save the trained UMAP model for transforming new queries
+      # Save the trained UMAP model for transforming new data
       @umap_instance.save_model(@model_path)
       puts "UMAP model saved to: #{@model_path}"
       
-      # Also cache the reduced embeddings separately for the apply method
-      embeddings_path = @model_path.sub(/\.bin$/, '_embeddings.json')
-      ClusterKit::Dimensionality::UMAP.save_data(@reduced_embeddings, embeddings_path)
-      puts "Reduced embeddings cached to: #{embeddings_path}"
-    end
-    
-    def load_model
-      return @reduced_embeddings if @reduced_embeddings
-      
-      # For the apply method, we need the pre-computed embeddings
-      embeddings_path = @model_path.sub(/\.bin$/, '_embeddings.json')
-      unless File.exist?(embeddings_path)
-        raise "Cached embeddings not found at #{embeddings_path}. Please train a model first."
+      # Save metadata about the training if we have params
+      if @model_params
+        metadata_path = @model_path.sub(/\.bin$/, '_metadata.json')
+        metadata = {
+          trained_at: Time.now.iso8601,
+          n_components: @model_params[:n_components],
+          n_neighbors: @model_params[:n_neighbors],
+          min_dist: @model_params[:min_dist],
+          document_count: @database.get_embeddings.size,
+          model_version: 2  # Version 2: proper transform-based approach
+        }
+        File.write(metadata_path, JSON.pretty_generate(metadata))
+        puts "Model metadata saved to: #{metadata_path}"
       end
-      
-      @reduced_embeddings = ClusterKit::Dimensionality::UMAP.load_data(embeddings_path)
-      puts "Cached embeddings loaded from: #{embeddings_path}"
-      @reduced_embeddings
     end
     
     def load_umap_model
