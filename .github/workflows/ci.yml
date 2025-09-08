@@ -29,6 +29,11 @@ jobs:
           ruby-version: ruby
           bundler-cache: true
 
+      - name: Clear any local bundle config
+        run: |
+          bundle config unset local.red-candle || true
+          bundle config unset path || true
+
       - name: Run specs
         run: |
           bundle exec rake spec
