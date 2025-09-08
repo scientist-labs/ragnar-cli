@@ -27,12 +27,12 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ruby
-          bundler-cache: true
+          bundler-cache: false  # Disable auto caching, we'll do it manually
 
-      - name: Clear any local bundle config
+      - name: Install dependencies
         run: |
-          bundle config unset local.red-candle || true
-          bundle config unset path || true
+          gem install bundler
+          bundle install --jobs 4 --retry 3
 
       - name: Run specs
         run: |
