@@ -1,4 +1,7 @@
 require 'parsekit'
+require 'json'
+require_relative 'umap_processor'
+require_relative 'config'
 
 module Ragnar
   class Indexer
@@ -13,6 +16,13 @@ module Ragnar
       @chunker = Chunker.new(chunk_size: chunk_size, chunk_overlap: chunk_overlap)
       @embedder = Embedder.new(model_name: embedding_model)
       @show_progress = show_progress
+      @db_path = db_path
+      
+      # Check if UMAP model exists for auto-apply
+      config = Config.instance
+      @umap_model_path = File.join(config.models_dir, config.get('umap.model_filename', 'umap_model.bin'))
+      @umap_available = File.exist?(@umap_model_path)
+      @umap_processor = nil
     end
 
     def index_path(path)
@@ -64,6 +74,15 @@ module Ragnar
         ensure
           file_progress&.advance
         end
+      end
+      
+      # Auto-apply UMAP if model exists and we indexed new documents
+      if @umap_available && stats[:chunks_created] > 0
+        apply_umap_to_new_documents(stats)
+        # Also check if retraining is needed
+        check_umap_retraining_needed?
+      elsif !@umap_available && should_suggest_umap_training?
+        suggest_umap_training
       end
 
       stats
@@ -229,6 +248,85 @@ module Ragnar
       rescue
         false
       end
+    end
+    
+    private
+    
+    def apply_umap_to_new_documents(stats)
+      puts "\nApplying UMAP to new embeddings..." if @show_progress
+      
+      begin
+        # Initialize UMAP processor if not already done
+        @umap_processor ||= UmapProcessor.new(
+          db_path: @db_path,
+          model_path: @umap_model_path
+        )
+        
+        # Apply UMAP to documents without reduced embeddings
+        result = @umap_processor.apply(batch_size: 100)
+        
+        if result[:processed] > 0
+          puts "✓ Applied UMAP to #{result[:processed]} documents" if @show_progress
+        end
+        
+        stats[:umap_applied] = result[:processed]
+      rescue => e
+        puts "⚠️  Could not apply UMAP: #{e.message}" if @show_progress
+        stats[:umap_errors] = 1
+      end
+    end
+    
+    def should_suggest_umap_training?
+      # Suggest UMAP training if we have enough documents
+      stats = @database.get_stats
+      
+      # Suggest if we have at least 100 documents and no UMAP model
+      stats[:with_embeddings] >= 100 && stats[:with_reduced_embeddings] == 0
+    end
+    
+    def suggest_umap_training
+      stats = @database.get_stats
+      
+      puts "\n" + "="*60
+      puts "💡 UMAP Training Suggestion"
+      puts "="*60
+      puts "You have #{stats[:with_embeddings]} documents indexed."
+      puts "Training a UMAP model can significantly improve query performance."
+      puts ""
+      puts "To train UMAP, run:"
+      puts "  ragnar train-umap"
+      puts ""
+      puts "This will:"
+      puts "  • Reduce embedding dimensions from #{stats[:embedding_dims]} to 50-64"
+      puts "  • Speed up similarity search by 5-10x"
+      puts "  • Reduce memory usage"
+      puts "="*60
+    end
+    
+    def check_umap_retraining_needed?
+      return false unless @umap_available
+      
+      # Check if model is outdated
+      metadata_path = @umap_model_path.sub(/\.bin$/, '_metadata.json')
+      return false unless File.exist?(metadata_path)
+      
+      begin
+        metadata = JSON.parse(File.read(metadata_path))
+        model_doc_count = metadata['document_count'] || 0
+        current_doc_count = @database.get_stats[:with_embeddings]
+        
+        # Suggest retraining if document count has doubled
+        if current_doc_count > model_doc_count * 2
+          puts "\n⚠️  UMAP model may be outdated"
+          puts "Model was trained on #{model_doc_count} documents, now have #{current_doc_count}"
+          puts "Consider retraining with: ragnar train-umap"
+          return true
+        end
+      rescue => e
+        # Ignore metadata reading errors
+      end
+      
+      false
     end
   end
 end

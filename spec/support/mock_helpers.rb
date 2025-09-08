@@ -98,6 +98,28 @@ module MockHelpers
       end
       
       allow(db).to receive(:dataset_exists?).and_return(true)
+      
+      # Add get_embeddings for UMAP processing
+      allow(db).to receive(:get_embeddings) do |limit: nil, offset: 0|
+        docs = limit ? documents[offset, limit] : documents[offset..-1]
+        (docs || []).map do |doc|
+          {
+            id: doc[:id],
+            embedding: doc[:embedding],
+            reduced_embedding: doc[:reduced_embedding]
+          }
+        end
+      end
+      
+      # Add update_reduced_embeddings for UMAP
+      allow(db).to receive(:update_reduced_embeddings) do |updates|
+        updates.each do |update|
+          doc = documents.find { |d| d[:id] == update[:id] }
+          doc[:reduced_embedding] = update[:reduced_embedding] if doc
+        end
+        true
+      end
+      
       allow(db).to receive(:get_stats) do
         {
           document_count: documents.size,
@@ -105,7 +127,8 @@ module MockHelpers
           unique_files: documents.map { |d| d[:file_path] }.uniq.size,
           total_chunks: documents.size,
           with_embeddings: documents.count { |d| d[:embedding] },
-          with_reduced_embeddings: 0,
+          with_reduced_embeddings: documents.count { |d| d[:reduced_embedding] },
+          embedding_dims: documents.first&.dig(:embedding)&.size || 768,
           total_size_mb: 0.1
         }
       end
