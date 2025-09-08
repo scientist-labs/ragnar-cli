@@ -412,6 +412,77 @@ module Ragnar
       say "Ragnar v#{Ragnar::VERSION}"
     end
 
+    desc "config", "Show current configuration"
+    def config
+      config = Config.instance
+      
+      say "\nConfiguration Settings:", :cyan
+      say "-" * 40
+      
+      if config.config_exists?
+        say "Config file: #{config.config_file_path}", :green
+      else
+        say "Config file: None (using defaults)", :yellow
+      end
+      
+      say "\nPaths:", :cyan
+      say "  Database: #{config.database_path}"
+      say "  Models: #{config.models_dir}"
+      say "  History: #{config.history_file}"
+      
+      say "\nEmbeddings:", :cyan
+      say "  Model: #{config.embedding_model}"
+      say "  Chunk size: #{config.chunk_size}"
+      say "  Chunk overlap: #{config.chunk_overlap}"
+      
+      say "\nLLM:", :cyan
+      say "  Model: #{config.llm_model}"
+      say "  GGUF file: #{config.llm_gguf_file}"
+      
+      say "\nUMAP:", :cyan
+      say "  Reduced dimensions: #{config.get('umap.reduced_dimensions', Ragnar::DEFAULT_REDUCED_DIMENSIONS)}"
+      say "  N neighbors: #{config.get('umap.n_neighbors', 15)}"
+      say "  Min distance: #{config.get('umap.min_dist', 0.1)}"
+      
+      say "\nQuery:", :cyan
+      say "  Top K: #{config.get('query.top_k', 3)}"
+      say "  Max context tokens: #{config.get('query.max_context_tokens', 2000)}"
+      say "  Query rewriting: #{config.get('query.enable_query_rewriting', true)}"
+    end
+    
+    desc "model", "Show current LLM model information"
+    def model
+      config = Config.instance
+      
+      say "\nLLM Model Configuration:", :cyan
+      say "-" * 40
+      
+      say "\nDefault model:", :green
+      say "  Repository: #{config.llm_model}"
+      say "  GGUF file: #{config.llm_gguf_file}"
+      
+      topic_model = config.get('llm.topic_model')
+      topic_gguf = config.get('llm.topic_gguf_file')
+      
+      if topic_model && topic_model != config.llm_model
+        say "\nTopic labeling model:", :green
+        say "  Repository: #{topic_model}"
+        say "  GGUF file: #{topic_gguf}"
+      else
+        say "\nTopic labeling: Using default model", :yellow
+      end
+      
+      # Check if model files exist
+      model_path = File.join(config.models_dir, config.llm_gguf_file)
+      if File.exist?(model_path)
+        size_mb = (File.size(model_path) / 1024.0 / 1024.0).round(2)
+        say "\nModel file exists: #{model_path} (#{size_mb} MB)", :green
+      else
+        say "\nModel file not found: #{model_path}", :yellow
+        say "Run 'ragnar query' to download automatically", :yellow
+      end
+    end
+
     desc "clear-cache", "Clear cached instances (useful in interactive mode)"
     def clear_cache_command
       clear_cache
