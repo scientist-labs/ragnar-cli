@@ -241,9 +241,15 @@ module Ragnar
           begin
             require 'red-candle'
 
-            # Initialize LLM for summarization once
-            say "Loading model: #{options[:llm_model]}", :cyan if options[:verbose]
-            llm = Candle::LLM.from_pretrained(options[:llm_model], gguf_file: options[:gguf_file])
+            # Use cached LLM manager to get or reuse model
+            llm_manager = get_cached_llm_manager
+            
+            # Use options if provided, otherwise fall back to config defaults
+            model_id = options[:llm_model] || Config.instance.llm_model
+            gguf_file = options[:gguf_file] || Config.instance.llm_gguf_file
+            
+            say "Using model: #{model_id}", :cyan if options[:verbose]
+            llm = llm_manager.get_llm(model_id: model_id, gguf_file: gguf_file)
 
             # Add summaries to topics
             topics.each_with_index do |topic, i|
