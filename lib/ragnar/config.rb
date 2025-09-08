@@ -125,15 +125,11 @@ module Ragnar
           'default_gguf_file' => 'tinyllama-1.1b-chat-v1.0.q4_k_m.gguf'
         },
         'query' => {
-          'top_k' => 3,
-          'enable_query_rewriting' => true
+          'top_k' => 3
         },
         'interactive' => {
           'prompt' => 'ragnar> ',
           'quiet_mode' => true
-        },
-        'output' => {
-          'show_progress' => true
         }
       }
       

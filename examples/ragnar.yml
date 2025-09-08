@@ -48,23 +48,6 @@ llm:
 query:
   # Number of documents to retrieve for context
   top_k: 3
-  
-  # Context optimization
-  max_context_tokens: 2000
-  
-  # Query rewriting
-  enable_query_rewriting: true
-
-# Topic modeling settings
-topics:
-  # Minimum cluster size for topic detection
-  min_cluster_size: 5
-  
-  # Labeling method: fast, quality, or hybrid  
-  labeling_method: "hybrid"
-  
-  # Enable automatic topic summarization
-  auto_summarize: false
 
 # Interactive mode settings
 interactive:
@@ -73,17 +56,3 @@ interactive:
   
   # Suppress verbose loading messages
   quiet_mode: true
-  
-  # Auto-save conversation history
-  save_history: true
-
-# Output settings
-output:
-  # Show progress bars during operations
-  show_progress: true
-  
-  # Use colors in output
-  use_colors: true
-  
-  # Verbosity level: quiet, normal, verbose
-  default_verbosity: "normal"
