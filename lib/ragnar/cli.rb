@@ -88,7 +88,7 @@ module Ragnar
     end
 
     desc "train-umap", "Train UMAP model on existing embeddings"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :n_components, type: :numeric, default: 50, desc: "Number of dimensions for reduction"
     option :n_neighbors, type: :numeric, default: 15, desc: "Number of neighbors for UMAP"
     option :min_dist, type: :numeric, default: 0.1, desc: "Minimum distance for UMAP"
@@ -128,7 +128,7 @@ module Ragnar
     end
 
     desc "apply-umap", "Apply trained UMAP model to reduce embedding dimensions"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :model_path, type: :string, desc: "Path to UMAP model"
     option :batch_size, type: :numeric, default: 100, desc: "Batch size for processing"
     def apply_umap
@@ -166,7 +166,7 @@ module Ragnar
     end
 
     desc "topics", "Extract and display topics from indexed documents"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :min_cluster_size, type: :numeric, default: 5, desc: "Minimum documents per topic"
     option :method, type: :string, default: "hybrid", desc: "Labeling method: fast, quality, or hybrid"
     option :export, type: :string, desc: "Export topics to file (json or html)"
@@ -313,7 +313,7 @@ module Ragnar
     end
 
     desc "query QUESTION", "Query the RAG system"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
@@ -391,7 +391,7 @@ module Ragnar
     end
 
     desc "stats", "Show database statistics"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     def stats
       db = get_cached_database(options[:db_path] || Config.instance.database_path)
       stats = db.get_stats
