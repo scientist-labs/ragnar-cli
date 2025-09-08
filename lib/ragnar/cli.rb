@@ -71,7 +71,8 @@ module Ragnar
         db_path: db_path,
         chunk_size: options[:chunk_size] || config.chunk_size,
         chunk_overlap: options[:chunk_overlap] || config.chunk_overlap,
-        embedding_model: options[:model] || config.embedding_model
+        embedding_model: options[:model] || config.embedding_model,
+        show_progress: config.show_progress?
       )
 
       begin
@@ -324,7 +325,13 @@ module Ragnar
       puts "Debug - Processor: #{processor.class}" if ENV['DEBUG']
 
       begin
-        result = processor.query(question, top_k: options[:top_k] || 3, verbose: options[:verbose] || false)
+        config = Config.instance
+        result = processor.query(
+          question, 
+          top_k: options[:top_k] || config.query_top_k, 
+          verbose: options[:verbose] || false,
+          enable_rewriting: config.enable_query_rewriting?
+        )
         puts "Debug - Result keys: #{result.keys}" if ENV['DEBUG']
 
         if options[:json]
@@ -445,9 +452,8 @@ module Ragnar
       say "  Min distance: #{config.get('umap.min_dist', 0.1)}"
       
       say "\nQuery:", :cyan
-      say "  Top K: #{config.get('query.top_k', 3)}"
-      say "  Max context tokens: #{config.get('query.max_context_tokens', 2000)}"
-      say "  Query rewriting: #{config.get('query.enable_query_rewriting', true)}"
+      say "  Top K: #{config.query_top_k}"
+      say "  Query rewriting: #{config.enable_query_rewriting?}"
     end
     
     desc "model", "Show current LLM model information"
@@ -457,20 +463,9 @@ module Ragnar
       say "\nLLM Model Configuration:", :cyan
       say "-" * 40
       
-      say "\nDefault model:", :green
+      say "\nModel:", :green
       say "  Repository: #{config.llm_model}"
       say "  GGUF file: #{config.llm_gguf_file}"
-      
-      topic_model = config.get('llm.topic_model')
-      topic_gguf = config.get('llm.topic_gguf_file')
-      
-      if topic_model && topic_model != config.llm_model
-        say "\nTopic labeling model:", :green
-        say "  Repository: #{topic_model}"
-        say "  GGUF file: #{topic_gguf}"
-      else
-        say "\nTopic labeling: Using default model", :yellow
-      end
       
       # Check if model files exist
       model_path = File.join(config.models_dir, config.llm_gguf_file)

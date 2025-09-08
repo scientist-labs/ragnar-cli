@@ -77,6 +77,14 @@ module Ragnar
       get('output.show_progress', true)
     end
     
+    def query_top_k
+      get('query.top_k', 3)
+    end
+    
+    def enable_query_rewriting?
+      get('query.enable_query_rewriting', true)
+    end
+    
     # Config file management
     def config_file_path
       @config_file_path
@@ -114,29 +122,18 @@ module Ragnar
         },
         'llm' => {
           'default_model' => 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF',
-          'default_gguf_file' => 'tinyllama-1.1b-chat-v1.0.q4_k_m.gguf',
-          'topic_model' => 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF',
-          'topic_gguf_file' => 'tinyllama-1.1b-chat-v1.0.q4_k_m.gguf'
+          'default_gguf_file' => 'tinyllama-1.1b-chat-v1.0.q4_k_m.gguf'
         },
         'query' => {
           'top_k' => 3,
-          'max_context_tokens' => 2000,
           'enable_query_rewriting' => true
-        },
-        'topics' => {
-          'min_cluster_size' => 5,
-          'labeling_method' => 'hybrid',
-          'auto_summarize' => false
         },
         'interactive' => {
           'prompt' => 'ragnar> ',
-          'quiet_mode' => true,
-          'save_history' => true
+          'quiet_mode' => true
         },
         'output' => {
-          'show_progress' => true,
-          'use_colors' => true,
-          'default_verbosity' => 'normal'
+          'show_progress' => true
         }
       }
       

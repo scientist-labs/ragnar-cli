@@ -16,29 +16,47 @@ module Ragnar
       @reranker = nil # Will initialize when needed
     end
     
-    def query(user_query, top_k: 3, verbose: false)
+    def query(user_query, top_k: 3, verbose: false, enable_rewriting: true)
       puts "Processing query: #{user_query}" if verbose
       
-      # Step 1: Rewrite and analyze the query
-      puts "\n#{'-'*60}" if verbose
-      puts "STEP 1: Query Analysis & Rewriting" if verbose
-      puts "-"*60 if verbose
-      
-      rewritten = @rewriter.rewrite(user_query)
-      
-      if verbose
-        puts "\nOriginal Query: #{user_query}"
-        puts "\nRewritten Query Analysis:"
-        puts "  Clarified Intent: #{rewritten['clarified_intent']}"
-        puts "  Query Type: #{rewritten['query_type']}"
-        puts "  Context Needed: #{rewritten['context_needed']}"
-        puts "\nGenerated Sub-queries (#{rewritten['sub_queries'].length}):"
-        rewritten['sub_queries'].each_with_index do |sq, idx|
-          puts "  #{idx + 1}. #{sq}"
+      # Step 1: Rewrite and analyze the query (if enabled)
+      if enable_rewriting
+        puts "\n#{'-'*60}" if verbose
+        puts "STEP 1: Query Analysis & Rewriting" if verbose
+        puts "-"*60 if verbose
+        
+        rewritten = @rewriter.rewrite(user_query)
+        
+        if verbose
+          puts "\nOriginal Query: #{user_query}"
+          puts "\nRewritten Query Analysis:"
+          puts "  Clarified Intent: #{rewritten['clarified_intent']}"
+          puts "  Query Type: #{rewritten['query_type']}"
+          puts "  Context Needed: #{rewritten['context_needed']}"
+          puts "\nGenerated Sub-queries (#{rewritten['sub_queries'].length}):"
+          rewritten['sub_queries'].each_with_index do |sq, idx|
+            puts "  #{idx + 1}. #{sq}"
+          end
+          if rewritten['key_terms'] && !rewritten['key_terms'].empty?
+            puts "\nKey Terms Identified:"
+            puts "  #{rewritten['key_terms'].join(', ')}"
+          end
         end
-        if rewritten['key_terms'] && !rewritten['key_terms'].empty?
-          puts "\nKey Terms Identified:"
-          puts "  #{rewritten['key_terms'].join(', ')}"
+      else
+        # Skip rewriting - use original query directly
+        rewritten = {
+          'clarified_intent' => user_query,
+          'query_type' => 'direct',
+          'context_needed' => 'general',
+          'sub_queries' => [user_query],
+          'key_terms' => []
+        }
+        
+        if verbose
+          puts "\n#{'-'*60}"
+          puts "STEP 1: Query Analysis (Rewriting Disabled)"
+          puts "-"*60
+          puts "\nUsing original query directly"
         end
       end
       

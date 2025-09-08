@@ -311,32 +311,20 @@ umap:
 llm:
   default_model: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF
   default_gguf_file: tinyllama-1.1b-chat-v1.0.q4_k_m.gguf
-  topic_model: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF    # Optional separate model for topics
-  topic_gguf_file: tinyllama-1.1b-chat-v1.0.q4_k_m.gguf
 
 # Query processing
 query:
   top_k: 3                      # Number of documents to retrieve
-  max_context_tokens: 2000      # Maximum context size for LLM
   enable_query_rewriting: true  # Use LLM to improve queries
-
-# Topic modeling
-topics:
-  min_cluster_size: 5           # Minimum documents per topic
-  labeling_method: hybrid       # Method: hybrid, llm, or keyword
-  auto_summarize: false         # Auto-generate topic summaries
 
 # Interactive mode
 interactive:
   prompt: 'ragnar> '            # Command prompt
   quiet_mode: true              # Suppress verbose output
-  save_history: true            # Save command history
 
 # Output settings
 output:
-  show_progress: true           # Show progress bars
-  use_colors: true              # Use colored output
-  default_verbosity: normal     # Verbosity level: quiet, normal, verbose
+  show_progress: true           # Show progress bars during indexing
 ```
 
 ### Viewing Configuration
