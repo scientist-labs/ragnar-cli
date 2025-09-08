@@ -18,7 +18,10 @@ module Ragnar
       
       @mutex.synchronize do
         @llms[cache_key] ||= begin
-          puts "Loading LLM: #{model_id}..." unless @llms.key?(cache_key)
+          # Only show loading message if not in interactive mode or if verbose
+          show_loading = ENV['DEBUG'] # Only show in debug mode for now
+          puts "Loading LLM: #{model_id}..." if show_loading && !@llms.key?(cache_key)
+          
           if gguf_file
             Candle::LLM.from_pretrained(model_id, gguf_file: gguf_file)
           else
