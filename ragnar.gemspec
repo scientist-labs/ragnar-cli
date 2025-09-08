@@ -36,7 +36,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "baran", "~> 0.2"
   spec.add_dependency "parsekit", "~> 0.1", ">= 0.1.2"
   spec.add_dependency "tty-progressbar", "~> 0.18"
-  spec.add_dependency "thor-interactive", "~> 0.1.0.pre.2"
+  spec.add_dependency "thor-interactive", "~> 0.1.0.pre.3"
 
   # Development dependencies
   spec.add_development_dependency "rake", "~> 13.0"
