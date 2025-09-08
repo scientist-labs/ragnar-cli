@@ -168,7 +168,6 @@ module Ragnar
     desc "topics", "Extract and display topics from indexed documents"
     option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :min_cluster_size, type: :numeric, default: 5, desc: "Minimum documents per topic"
-    option :method, type: :string, default: "hybrid", desc: "Labeling method: fast, quality, or hybrid"
     option :export, type: :string, desc: "Export topics to file (json or html)"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing"
     option :summarize, type: :boolean, default: false, aliases: "-s", desc: "Generate human-readable topic summaries using LLM"
@@ -223,9 +222,8 @@ module Ragnar
 
         # Initialize topic modeling engine
         engine = Ragnar::TopicModeling::Engine.new(
-          min_cluster_size: options[:min_cluster_size],
-          labeling_method: options[:method].to_sym,
-          verbose: options[:verbose],
+          min_cluster_size: options[:min_cluster_size] || 5,
+          verbose: options[:verbose] || false,
           reduce_dimensions: reduce_dims
         )
 
