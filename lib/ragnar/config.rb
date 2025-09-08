@@ -21,8 +21,8 @@ module Ragnar
       keys = key_path.split('.')
       value = keys.reduce(@config) { |config, key| config&.dig(key) }
       
-      # Use default if value is nil
-      result = value || default
+      # Use default only if value is nil (not false)
+      result = value.nil? ? default : value
       
       # Expand paths that start with ~
       if result.is_a?(String) && result.start_with?('~')

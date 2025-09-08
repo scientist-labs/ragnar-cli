@@ -260,30 +260,123 @@ ragnar stats
 
 ## Configuration
 
-### Default Settings
+Ragnar uses a flexible YAML-based configuration system that allows you to customize all aspects of the RAG pipeline.
 
-```ruby
-DEFAULT_DB_PATH = "ragnar_database"
-DEFAULT_CHUNK_SIZE = 512
-DEFAULT_CHUNK_OVERLAP = 50
-DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-en"
+### Configuration File
+
+Ragnar looks for configuration files in the following order:
+1. `.ragnar.yml` in the current directory
+2. `.ragnarrc.yml` in the current directory  
+3. `ragnar.yml` in the current directory
+4. `.ragnar.yml` in your home directory
+5. Built-in defaults
+
+Generate a configuration file:
+```bash
+# Create local config (in current directory)
+ragnar init-config
+
+# Create global config (in home directory)
+ragnar init-config --global
+
+# Force overwrite existing config
+ragnar init-config --force
 ```
+
+### Configuration Options
+
+Example `.ragnar.yml` file:
+
+```yaml
+# Storage paths (all support ~ expansion)
+storage:
+  database_path: "~/.cache/ragnar/database"    # Vector database location
+  models_dir: "~/.cache/ragnar/models"         # Downloaded model files
+  history_file: "~/.cache/ragnar/history"      # Interactive mode history
+
+# Embedding configuration
+embeddings:
+  model: jinaai/jina-embeddings-v2-base-en    # Embedding model to use
+  chunk_size: 512                              # Tokens per chunk
+  chunk_overlap: 50                            # Token overlap between chunks
+
+# UMAP dimensionality reduction
+umap:
+  reduced_dimensions: 64                       # Target dimensions (2-100)
+  n_neighbors: 15                              # UMAP neighbors parameter
+  min_dist: 0.1                                # UMAP minimum distance
+  model_filename: umap_model.bin              # Saved model filename
+
+# LLM configuration
+llm:
+  default_model: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF
+  default_gguf_file: tinyllama-1.1b-chat-v1.0.q4_k_m.gguf
+  topic_model: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF    # Optional separate model for topics
+  topic_gguf_file: tinyllama-1.1b-chat-v1.0.q4_k_m.gguf
+
+# Query processing
+query:
+  top_k: 3                      # Number of documents to retrieve
+  max_context_tokens: 2000      # Maximum context size for LLM
+  enable_query_rewriting: true  # Use LLM to improve queries
+
+# Topic modeling
+topics:
+  min_cluster_size: 5           # Minimum documents per topic
+  labeling_method: hybrid       # Method: hybrid, llm, or keyword
+  auto_summarize: false         # Auto-generate topic summaries
+
+# Interactive mode
+interactive:
+  prompt: 'ragnar> '            # Command prompt
+  quiet_mode: true              # Suppress verbose output
+  save_history: true            # Save command history
+
+# Output settings
+output:
+  show_progress: true           # Show progress bars
+  use_colors: true              # Use colored output
+  default_verbosity: normal     # Verbosity level: quiet, normal, verbose
+```
+
+### Viewing Configuration
+
+Check current configuration:
+```bash
+# Show all configuration settings
+ragnar config
+
+# Show LLM model information
+ragnar model
+```
+
+In interactive mode:
+```bash
+ragnar interactive
+ragnar> config    # Show configuration
+ragnar> model     # Show model details
+```
+
+### Environment Variables
+
+Configuration values can be overridden with environment variables:
+- `XDG_CACHE_HOME` - Override default cache directory (~/.cache)
 
 ### Supported Models
 
 **Embedding Models** (via red-candle):
-- jinaai/jina-embeddings-v2-base-en
-- BAAI/bge-base-en-v1.5
-- sentence-transformers/all-MiniLM-L6-v2
+- `jinaai/jina-embeddings-v2-base-en` (default, 768 dimensions)
+- `BAAI/bge-base-en-v1.5`
+- `sentence-transformers/all-MiniLM-L6-v2`
 
-**LLM Models** (via red-candle):
-- Qwen/Qwen2.5-1.5B-Instruct
-- microsoft/phi-2
-- TinyLlama/TinyLlama-1.1B-Chat-v1.0
+**LLM Models** (via red-candle, GGUF format):
+- `TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF` (default, fast)
+- `TheBloke/Qwen2.5-1.5B-Instruct-GGUF`
+- `TheBloke/phi-2-GGUF`
 
 **Reranker Models** (via red-candle):
-- BAAI/bge-reranker-base
-- cross-encoder/ms-marco-MiniLM-L-6-v2
+- `BAAI/bge-reranker-base`
+- `cross-encoder/ms-marco-MiniLM-L-6-v2`
 
 ## Advanced Usage
 
