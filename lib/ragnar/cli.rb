@@ -1,6 +1,8 @@
 require_relative "cli_visualization"
+require_relative "config"
 require "thor/interactive"
 require "stringio"
+require "fileutils"
 
 module Ragnar
   class CLI < Thor
@@ -9,9 +11,9 @@ module Ragnar
 
     # Configure interactive mode
     configure_interactive(
-      prompt: "ragnar> ",
+      prompt: Config.instance.interactive_prompt,
       allow_nested: false,
-      history_file: "~/.ragnar_history",
+      history_file: Config.instance.history_file,
       default_handler: proc do |input, thor_instance|
         puts "[DEBUG] Default handler called: #{input}" if ENV["DEBUG"]
 
@@ -37,13 +39,16 @@ module Ragnar
     class_variable_set(:@@cached_db_path, nil)
 
     desc "index PATH", "Index text files from PATH (file or directory)"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
-    option :chunk_size, type: :numeric, default: Ragnar::DEFAULT_CHUNK_SIZE, desc: "Chunk size in tokens"
-    option :chunk_overlap, type: :numeric, default: Ragnar::DEFAULT_CHUNK_OVERLAP, desc: "Chunk overlap in tokens"
-    option :model, type: :string, default: Ragnar::DEFAULT_EMBEDDING_MODEL, desc: "Embedding model to use"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
+    option :chunk_size, type: :numeric, desc: "Chunk size in tokens (default from config)"
+    option :chunk_overlap, type: :numeric, desc: "Chunk overlap in tokens (default from config)"
+    option :model, type: :string, desc: "Embedding model to use (default from config)"
     def index(path)
-      unless File.exist?(path)
-        say "Error: Path does not exist: #{path}", :red
+      # Expand user paths (handle ~ in user input)
+      expanded_path = File.expand_path(path)
+      
+      unless File.exist?(expanded_path)
+        say "Error: Path does not exist: #{expanded_path}", :red
         exit 1
       end
 
@@ -52,8 +57,11 @@ module Ragnar
       # Debug options in interactive mode
       puts "Debug - options: #{options.inspect}" if ENV['DEBUG']
 
+      # Get config instance
+      config = Config.instance
+      
       # Clear database cache when indexing new content
-      db_path = options[:db_path] || Ragnar::DEFAULT_DB_PATH
+      db_path = options[:db_path] || config.database_path
       if @@cached_db_path == db_path
         @@cached_database = nil
         @@cached_query_processor = nil
@@ -61,13 +69,14 @@ module Ragnar
 
       indexer = Indexer.new(
         db_path: db_path,
-        chunk_size: options[:chunk_size] || Ragnar::DEFAULT_CHUNK_SIZE,
-        chunk_overlap: options[:chunk_overlap] || Ragnar::DEFAULT_CHUNK_OVERLAP,
-        embedding_model: options[:model] || Ragnar::DEFAULT_EMBEDDING_MODEL
+        chunk_size: options[:chunk_size] || config.chunk_size,
+        chunk_overlap: options[:chunk_overlap] || config.chunk_overlap,
+        embedding_model: options[:model] || config.embedding_model,
+        show_progress: config.show_progress?
       )
 
       begin
-        stats = indexer.index_path(path)
+        stats = indexer.index_path(expanded_path)
         say "\nIndexing complete!", :green
         say "Files processed: #{stats[:files_processed]}"
         say "Chunks created: #{stats[:chunks_created]}"
@@ -79,17 +88,25 @@ module Ragnar
     end
 
     desc "train-umap", "Train UMAP model on existing embeddings"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :n_components, type: :numeric, default: 50, desc: "Number of dimensions for reduction"
     option :n_neighbors, type: :numeric, default: 15, desc: "Number of neighbors for UMAP"
     option :min_dist, type: :numeric, default: 0.1, desc: "Minimum distance for UMAP"
-    option :model_path, type: :string, default: "umap_model.bin", desc: "Path to save UMAP model"
+    option :model_path, type: :string, desc: "Path to save UMAP model"
     def train_umap
       say "Training UMAP model on embeddings...", :green
 
+      config = Config.instance
+      # Use model_path from options if provided, otherwise use config models_dir
+      model_path = if options[:model_path]
+        options[:model_path]
+      else
+        File.join(config.models_dir, "umap_model.bin")
+      end
+      
       processor = UmapProcessor.new(
-        db_path: options[:db_path] || Ragnar::DEFAULT_DB_PATH,
-        model_path: options[:model_path] || "umap_model.bin"
+        db_path: options[:db_path] || config.database_path,
+        model_path: model_path
       )
 
       begin
@@ -103,7 +120,7 @@ module Ragnar
         say "Embeddings processed: #{stats[:embeddings_count]}"
         say "Original dimensions: #{stats[:original_dims]}"
         say "Reduced dimensions: #{stats[:reduced_dims]}"
-        say "Model saved to: #{options[:model_path]}"
+        say "Model saved to: #{processor.model_path}"
       rescue => e
         say "Error during UMAP training: #{e.message}", :red
         exit 1
@@ -111,11 +128,16 @@ module Ragnar
     end
 
     desc "apply-umap", "Apply trained UMAP model to reduce embedding dimensions"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
-    option :model_path, type: :string, default: "umap_model.bin", desc: "Path to UMAP model"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
+    option :model_path, type: :string, desc: "Path to UMAP model"
     option :batch_size, type: :numeric, default: 100, desc: "Batch size for processing"
     def apply_umap
-      model_path = options[:model_path] || "umap_model.bin"
+      config = Config.instance
+      model_path = if options[:model_path]
+        options[:model_path]
+      else
+        File.join(config.models_dir, "umap_model.bin")
+      end
 
       unless File.exist?(model_path)
         say "Error: UMAP model not found at: #{model_path}", :red
@@ -126,7 +148,7 @@ module Ragnar
       say "Applying UMAP model to embeddings...", :green
 
       processor = UmapProcessor.new(
-        db_path: options[:db_path] || Ragnar::DEFAULT_DB_PATH,
+        db_path: options[:db_path] || config.database_path,
         model_path: model_path
       )
 
@@ -144,7 +166,7 @@ module Ragnar
     end
 
     desc "topics", "Extract and display topics from indexed documents"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :min_cluster_size, type: :numeric, default: 5, desc: "Minimum documents per topic"
     option :method, type: :string, default: "hybrid", desc: "Labeling method: fast, quality, or hybrid"
     option :export, type: :string, desc: "Export topics to file (json or html)"
@@ -158,7 +180,7 @@ module Ragnar
       say "Extracting topics from indexed documents...", :green
 
       # Load embeddings and documents from database - use cache in interactive mode
-      database = get_cached_database(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
+      database = get_cached_database(options[:db_path] || Config.instance.database_path)
 
       begin
         # Get all documents with embeddings
@@ -259,7 +281,7 @@ module Ragnar
     option :k, type: :numeric, default: 5, desc: "Number of results to return"
     option :show_scores, type: :boolean, default: false, desc: "Show similarity scores"
     def search(query_text)
-      database = get_cached_database(options[:database] || Ragnar::DEFAULT_DB_PATH)
+      database = get_cached_database(options[:database] || Config.instance.database_path)
       embedder = get_cached_embedder()
 
       # Generate embedding for query
@@ -291,7 +313,7 @@ module Ragnar
     end
 
     desc "query QUESTION", "Query the RAG system"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
@@ -299,11 +321,17 @@ module Ragnar
       puts "Debug - Query called with: #{question.inspect}" if ENV['DEBUG']
       puts "Debug - Options: #{options.inspect}" if ENV['DEBUG']
 
-      processor = get_cached_query_processor(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
+      processor = get_cached_query_processor(options[:db_path] || Config.instance.database_path)
       puts "Debug - Processor: #{processor.class}" if ENV['DEBUG']
 
       begin
-        result = processor.query(question, top_k: options[:top_k] || 3, verbose: options[:verbose] || false)
+        config = Config.instance
+        result = processor.query(
+          question, 
+          top_k: options[:top_k] || config.query_top_k, 
+          verbose: options[:verbose] || false,
+          enable_rewriting: config.enable_query_rewriting?
+        )
         puts "Debug - Result keys: #{result.keys}" if ENV['DEBUG']
 
         if options[:json]
@@ -363,9 +391,9 @@ module Ragnar
     end
 
     desc "stats", "Show database statistics"
-    option :db_path, type: :string, default: Ragnar::DEFAULT_DB_PATH, desc: "Path to Lance database"
+    option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     def stats
-      db = get_cached_database(options[:db_path] || Ragnar::DEFAULT_DB_PATH)
+      db = get_cached_database(options[:db_path] || Config.instance.database_path)
       stats = db.get_stats
 
       say "\nDatabase Statistics", :green
@@ -391,16 +419,257 @@ module Ragnar
       say "Ragnar v#{Ragnar::VERSION}"
     end
 
+    desc "config", "Show current configuration"
+    def config
+      config = Config.instance
+      
+      say "\nConfiguration Settings:", :cyan
+      say "-" * 40
+      
+      if config.config_exists?
+        say "Config file: #{config.config_file_path}", :green
+      else
+        say "Config file: None (using defaults)", :yellow
+      end
+      
+      say "\nPaths:", :cyan
+      say "  Database: #{config.database_path}"
+      say "  Models: #{config.models_dir}"
+      say "  History: #{config.history_file}"
+      
+      say "\nEmbeddings:", :cyan
+      say "  Model: #{config.embedding_model}"
+      say "  Chunk size: #{config.chunk_size}"
+      say "  Chunk overlap: #{config.chunk_overlap}"
+      
+      say "\nLLM:", :cyan
+      say "  Model: #{config.llm_model}"
+      say "  GGUF file: #{config.llm_gguf_file}"
+      
+      say "\nUMAP:", :cyan
+      say "  Reduced dimensions: #{config.get('umap.reduced_dimensions', Ragnar::DEFAULT_REDUCED_DIMENSIONS)}"
+      say "  N neighbors: #{config.get('umap.n_neighbors', 15)}"
+      say "  Min distance: #{config.get('umap.min_dist', 0.1)}"
+      
+      say "\nQuery:", :cyan
+      say "  Top K: #{config.query_top_k}"
+      say "  Query rewriting: #{config.enable_query_rewriting?}"
+    end
+    
+    desc "model", "Show current LLM model information"
+    def model
+      config = Config.instance
+      
+      say "\nLLM Model Configuration:", :cyan
+      say "-" * 40
+      
+      say "\nModel:", :green
+      say "  Repository: #{config.llm_model}"
+      say "  GGUF file: #{config.llm_gguf_file}"
+      
+      # Check if model files exist
+      model_path = File.join(config.models_dir, config.llm_gguf_file)
+      if File.exist?(model_path)
+        size_mb = (File.size(model_path) / 1024.0 / 1024.0).round(2)
+        say "\nModel file exists: #{model_path} (#{size_mb} MB)", :green
+      else
+        say "\nModel file not found: #{model_path}", :yellow
+        say "Run 'ragnar query' to download automatically", :yellow
+      end
+    end
+
     desc "clear-cache", "Clear cached instances (useful in interactive mode)"
     def clear_cache_command
       clear_cache
       say "Cache cleared. Next commands will create fresh instances.", :green
     end
 
+    desc "reset", "Reset Ragnar data (database, models, cache)"
+    option :all, type: :boolean, default: false, aliases: "-a", desc: "Reset everything (database, models, cache)"
+    option :database, type: :boolean, default: false, aliases: "-d", desc: "Reset database only"
+    option :models, type: :boolean, default: false, aliases: "-m", desc: "Reset UMAP models only"
+    option :cache, type: :boolean, default: false, aliases: "-c", desc: "Clear cache only"
+    option :force, type: :boolean, default: false, aliases: "-f", desc: "Skip confirmation prompt"
+    def reset
+      # Determine what to reset
+      reset_all = options[:all]
+      reset_db = options[:database] || reset_all
+      reset_models = options[:models] || reset_all
+      reset_cache = options[:cache] || reset_all
+      
+      # If no specific options, default to all
+      if !reset_db && !reset_models && !reset_cache
+        reset_all = true
+        reset_db = reset_models = reset_cache = true
+      end
+      
+      # Build confirmation message
+      items_to_reset = []
+      items_to_reset << "database" if reset_db
+      items_to_reset << "UMAP models" if reset_models
+      items_to_reset << "cache" if reset_cache
+      
+      # Get paths that will be affected
+      config = Config.instance
+      db_path = options[:db_path] || config.database_path
+      model_path = File.join(config.models_dir, "umap_model.bin")
+      
+      # Show what will be deleted
+      say "\nWARNING: This will delete the following:", :red
+      say "-" * 40
+      
+      if reset_db
+        say "Database: #{db_path}", :cyan
+        if File.exist?(db_path)
+          stats = Database.new(db_path).get_stats rescue nil
+          if stats
+            say "  (#{stats[:total_documents]} documents, #{stats[:total_chunks]} chunks)", :white
+          end
+        else
+          say "  (does not exist)", :white
+        end
+      end
+      
+      if reset_models
+        say "UMAP models:", :cyan
+        model_files = [
+          model_path,
+          model_path.sub(/\.bin$/, '_metadata.json'),
+          model_path.sub(/\.bin$/, '_embeddings.json')  # Old format, if exists
+        ]
+        model_files.each do |file|
+          if File.exist?(file)
+            say "  #{file} (#{(File.size(file) / 1024.0).round(1)} KB)", :white
+          end
+        end
+        if model_files.none? { |f| File.exist?(f) }
+          say "  (no models found)", :white
+        end
+      end
+      
+      if reset_cache
+        cache_dir = File.expand_path("~/.cache/ragnar")
+        say "Cache directory: #{cache_dir}", :cyan
+        if Dir.exist?(cache_dir)
+          cache_size = Dir.glob(File.join(cache_dir, "**/*"))
+            .select { |f| File.file?(f) }
+            .sum { |f| File.size(f) } / 1024.0 / 1024.0
+          say "  (#{cache_size.round(1)} MB)", :white
+        else
+          say "  (does not exist)", :white
+        end
+      end
+      
+      say "-" * 40
+      
+      # Ask for confirmation unless --force
+      unless options[:force]
+        message = "\nAre you sure you want to reset #{items_to_reset.join(', ')}?"
+        
+        # Check if we're in interactive mode
+        if ENV['THOR_INTERACTIVE_SESSION'] == 'true'
+          # In interactive mode, use a simple prompt
+          say message, :yellow
+          response = ask("Type 'yes' to confirm, anything else to cancel:", :yellow)
+          confirmed = response.downcase == 'yes'
+        else
+          # In CLI mode, use Thor's yes? method
+          confirmed = yes?(message + " (y/N)", :yellow)
+        end
+        
+        unless confirmed
+          say "\nReset cancelled.", :cyan
+          return
+        end
+      end
+      
+      # Perform the reset
+      say "\nResetting...", :green
+      
+      if reset_db && File.exist?(db_path)
+        say "Removing database: #{db_path}"
+        FileUtils.rm_rf(db_path)
+        say "  ✓ Database removed", :green
+      end
+      
+      if reset_models
+        model_files = [
+          model_path,
+          model_path.sub(/\.bin$/, '_metadata.json'),
+          model_path.sub(/\.bin$/, '_embeddings.json')
+        ]
+        model_files.each do |file|
+          if File.exist?(file)
+            say "Removing model file: #{file}"
+            FileUtils.rm_f(file)
+            say "  ✓ Removed", :green
+          end
+        end
+      end
+      
+      if reset_cache
+        # Clear in-memory cache
+        clear_cache
+        
+        # Optionally clear cache directory (but preserve history)
+        cache_dir = File.expand_path("~/.cache/ragnar")
+        if Dir.exist?(cache_dir)
+          # Preserve history file
+          history_file = File.join(cache_dir, "history")
+          history_content = File.read(history_file) if File.exist?(history_file)
+          
+          # Remove cache directory contents except history
+          Dir.glob(File.join(cache_dir, "*")).each do |item|
+            next if File.basename(item) == "history"
+            if File.directory?(item)
+              FileUtils.rm_rf(item)
+            else
+              FileUtils.rm_f(item)
+            end
+            say "Removed cache item: #{File.basename(item)}", :green
+          end
+        end
+        say "  ✓ Cache cleared", :green
+      end
+      
+      say "\nReset complete!", :green
+      say "You can now start fresh with 'ragnar index <path>'", :cyan
+    end
+
+    desc "init-config", "Generate a configuration file with current defaults"
+    option :global, type: :boolean, default: false, aliases: "-g", desc: "Create global config in home directory"
+    option :force, type: :boolean, default: false, aliases: "-f", desc: "Overwrite existing config file"
+    def init_config
+      config = Config.instance
+      
+      if options[:global]
+        config_path = File.expand_path('~/.ragnar.yml')
+      else
+        config_path = File.join(Dir.pwd, '.ragnar.yml')
+      end
+      
+      if File.exist?(config_path) && !options[:force]
+        say "Config file already exists at: #{config_path}", :yellow
+        say "Use --force to overwrite, or choose a different location.", :yellow
+        return
+      end
+      
+      generated_path = config.generate_config_file(config_path)
+      say "Config file created at: #{generated_path}", :green
+      say "Edit this file to customize Ragnar's behavior.", :cyan
+      
+      if config.config_exists?
+        say "\nNote: Currently using config from: #{config.config_file_path}", :yellow
+      end
+    end
+
     private
 
     # Cached instance helpers for interactive mode
-    def get_cached_database(db_path = Ragnar::DEFAULT_DB_PATH)
+    def get_cached_database(db_path = nil)
+      # Use config default if no path provided
+      db_path ||= Config.instance.database_path
+      
       # Cache database per path - clear cache if path changes
       if @@cached_db_path != db_path
         @@cached_database = nil
@@ -411,8 +680,9 @@ module Ragnar
       @@cached_database ||= Database.new(db_path)
     end
 
-    def get_cached_embedder(model_name = Ragnar::DEFAULT_EMBEDDING_MODEL)
-      # Simple cache - could be enhanced to cache per model
+    def get_cached_embedder(model_name = nil)
+      # Use config default if no model specified
+      model_name ||= Config.instance.embedding_model
       @@cached_embedder ||= Embedder.new(model_name: model_name)
     end
 
@@ -420,7 +690,10 @@ module Ragnar
       @@cached_llm_manager ||= LLMManager.instance
     end
 
-    def get_cached_query_processor(db_path = Ragnar::DEFAULT_DB_PATH)
+    def get_cached_query_processor(db_path = nil)
+      # Use config default if no path provided
+      db_path ||= Config.instance.database_path
+      
       # Cache query processor per database path
       if @@cached_db_path != db_path || @@cached_query_processor.nil?
         @@cached_query_processor = QueryProcessor.new(db_path: db_path)

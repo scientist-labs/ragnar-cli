@@ -53,6 +53,10 @@ update_modules.rb
 .env
 .env.*
 
+# Config files (personal configurations)
+.ragnar.yml
+.ragnarrc.yml
+
 # Logs
 *.log
 /log/
