@@ -32,7 +32,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency "thor", "~> 1.3"
   spec.add_dependency "red-candle", ">= 1.2.3"
   spec.add_dependency "lancelot", "~> 0.3", ">= 0.3.3"
-  spec.add_dependency "topical", ">= 0.1.1"
+  spec.add_dependency "topical", ">= 0.1.2"
+
   spec.add_dependency "baran", "~> 0.2"
   spec.add_dependency "parsekit", "~> 0.1", ">= 0.1.2"
   spec.add_dependency "tty-progressbar", "~> 0.18"
