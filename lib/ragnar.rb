@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "thor"
-require "red-candle"
+require "red-candle"  # embeddings and reranking
+require "ruby_llm"
+require "ruby_llm-red_candle"
 require "lancelot"
 require "clusterkit"
 require "baran"

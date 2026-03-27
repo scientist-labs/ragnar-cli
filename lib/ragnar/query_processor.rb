@@ -369,36 +369,20 @@ module Ragnar
     end
     
     def generate_response(query:, repacked_context:, query_type:)
-      # Get cached LLM from manager
-      llm = @llm_manager.default_llm
-      
-      # Create prompt with repacked context
-      prompt = build_prompt(query, repacked_context, query_type)
-      
-      # Generate response using default config
-      llm.generate(prompt)
+      # Create a fresh chat for each query to avoid conversation history bleed
+      config = Config.instance
+      chat = RubyLLM.chat(provider: config.llm_provider.to_sym, model: config.llm_model)
+      chat.with_instructions(
+        "You are a helpful assistant. Answer questions based ONLY on the provided context. " \
+        "If the answer is not in the context, say \"I don't have enough information to answer that question.\""
+      )
+
+      prompt = "Context:\n#{repacked_context}\n\nQuestion: #{query}"
+      chat.ask(prompt).content
     rescue => e
       # Fallback to returning the repacked context
       puts "Warning: LLM generation failed (#{e.message})"
       "Based on the retrieved information:\n\n#{repacked_context[0..500]}..."
-    end
-    
-    def build_prompt(query, context, query_type)
-      base_prompt = <<~PROMPT
-        <|system|>
-        You are a helpful assistant. Answer questions based ONLY on the provided context.
-        If the answer is not in the context, say "I don't have enough information to answer that question."
-        </s>
-        <|user|>
-        Context:
-        #{context}
-        
-        Question: #{query}
-        </s>
-        <|assistant|>
-      PROMPT
-      
-      base_prompt
     end
     
     def calculate_confidence(documents)

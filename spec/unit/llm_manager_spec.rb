@@ -5,102 +5,74 @@ require "spec_helper"
 RSpec.describe Ragnar::LLMManager do
   let(:manager) { described_class.instance }
 
+  before do
+    manager.clear_cache
+  end
+
   describe "#initialize" do
     it "is a singleton" do
       instance1 = described_class.instance
       instance2 = described_class.instance
-      
+
       expect(instance1).to be(instance2)
     end
 
     it "initializes with proper instance variables" do
-      # Access private instance variables for testing
-      llms = manager.instance_variable_get(:@llms)
+      chats = manager.instance_variable_get(:@chats)
       mutex = manager.instance_variable_get(:@mutex)
-      
-      expect(llms).to be_a(Hash)
+
+      expect(chats).to be_a(Hash)
       expect(mutex).to be_a(Mutex)
     end
   end
 
-  describe "#get_llm" do
+  describe "#get_chat" do
     context "basic functionality" do
-      it "returns an LLM instance" do
-        llm = manager.get_llm
-
-        expect(llm).to be_a(Object)  # Mocked or real LLM
+      it "returns a chat instance" do
+        chat = manager.get_chat
+        expect(chat).to be_a(Object)
       end
 
-      it "accepts custom model parameters" do
+      it "accepts custom provider and model" do
         expect {
-          manager.get_llm(model_id: "custom/model", gguf_file: "custom.gguf")
-        }.not_to raise_error
-      end
-
-      it "accepts nil GGUF file" do
-        expect {
-          manager.get_llm(model_id: "unquantized/model", gguf_file: nil)
+          manager.get_chat(provider: :red_candle, model: "custom/model")
         }.not_to raise_error
       end
 
       it "returns consistent instances for same parameters" do
-        llm1 = manager.get_llm(model_id: "test/model", gguf_file: "test.gguf")
-        llm2 = manager.get_llm(model_id: "test/model", gguf_file: "test.gguf")
+        chat1 = manager.get_chat(provider: :red_candle, model: "test/model")
+        chat2 = manager.get_chat(provider: :red_candle, model: "test/model")
 
-        expect(llm1).to be(llm2)  # Same cached instance
+        expect(chat1).to be(chat2)
       end
     end
 
     context "caching behavior" do
-      it "caches models with different parameters separately" do
-        manager.clear_cache  # Start fresh
+      it "caches chats with different parameters separately" do
+        chat1 = manager.get_chat(provider: :red_candle, model: "model1")
+        chat2 = manager.get_chat(provider: :red_candle, model: "model2")
+        chat1_again = manager.get_chat(provider: :red_candle, model: "model1")
 
-        llm1 = manager.get_llm(model_id: "model1", gguf_file: "file1.gguf")
-        llm2 = manager.get_llm(model_id: "model2", gguf_file: "file2.gguf") 
-        llm1_again = manager.get_llm(model_id: "model1", gguf_file: "file1.gguf")
-
-        expect(llm1).to be(llm1_again)  # Same cache entry
-        # Note: Can't easily test model1 != model2 due to global mocking
+        expect(chat1).to be(chat1_again)
       end
 
-      it "treats different GGUF files as different cache entries" do
-        manager.clear_cache
+      it "treats different providers as different cache entries" do
+        chat1 = manager.get_chat(provider: :red_candle, model: "same/model")
+        chat2 = manager.get_chat(provider: :openai, model: "same/model")
 
-        llm1 = manager.get_llm(model_id: "same/model", gguf_file: "file1.gguf")
-        llm2 = manager.get_llm(model_id: "same/model", gguf_file: "file2.gguf")
-
-        # With global mocking, we can't test object identity, but we can test the method calls
-        expect(llm1).to be_a(Object)
-        expect(llm2).to be_a(Object)
-      end
-
-      it "handles cache key generation correctly" do
-        # Test that method doesn't raise errors with various inputs
-        test_params = [
-          { model_id: "model1", gguf_file: "file.gguf" },
-          { model_id: "model2", gguf_file: nil },
-          { model_id: "model3", gguf_file: "" }
-        ]
-
-        test_params.each do |params|
-          expect {
-            manager.get_llm(**params)
-          }.not_to raise_error
-        end
+        expect(chat1).to be_a(Object)
+        expect(chat2).to be_a(Object)
       end
     end
 
     context "thread safety" do
       it "uses synchronization for cache access" do
-        # Test that method completes without race conditions
         results = []
-        
-        # Simulate concurrent access (simplified test)
+
         2.times do
-          results << manager.get_llm(model_id: "concurrent/model", gguf_file: "test.gguf")
+          results << manager.get_chat(provider: :red_candle, model: "concurrent/model")
         end
 
-        # Should get consistent results
         expect(results.first).to be(results.last)
       end
     end
@@ -108,113 +80,71 @@ RSpec.describe Ragnar::LLMManager do
 
   describe "#clear_cache" do
     it "clears the internal cache" do
-      # Load some models first
-      manager.get_llm(model_id: "model1", gguf_file: "file1.gguf")
-      manager.get_llm(model_id: "model2", gguf_file: "file2.gguf")
-      
-      # Clear cache
-      manager.clear_cache
-      
-      # Verify cache is empty
-      llms = manager.instance_variable_get(:@llms)
-      expect(llms).to be_empty
-    end
+      manager.get_chat(provider: :red_candle, model: "model1")
+      manager.get_chat(provider: :red_candle, model: "model2")
 
-    it "allows reloading models after clearing" do
-      # Load a model
-      original_llm = manager.get_llm(model_id: "test/model", gguf_file: "test.gguf")
-
-      # Clear cache
       manager.clear_cache
 
-      # Load same model again - should work without errors
-      expect {
-        new_llm = manager.get_llm(model_id: "test/model", gguf_file: "test.gguf")
-        expect(new_llm).to be_a(Object)
-      }.not_to raise_error
+      chats = manager.instance_variable_get(:@chats)
+      expect(chats).to be_empty
     end
 
-    it "uses synchronization for thread safety" do
+    it "allows reloading chats after clearing" do
+      manager.get_chat(provider: :red_candle, model: "test/model")
+      manager.clear_cache
+
       expect {
-        manager.clear_cache
+        chat = manager.get_chat(provider: :red_candle, model: "test/model")
+        expect(chat).to be_a(Object)
       }.not_to raise_error
     end
   end
 
-  describe "#default_llm" do
-    it "returns an LLM instance" do
-      llm = manager.default_llm
-      expect(llm).to be_a(Object)
+  describe "#default_chat" do
+    it "returns a chat instance" do
+      chat = manager.default_chat
+      expect(chat).to be_a(Object)
     end
 
-    it "is equivalent to calling get_llm with defaults" do
-      default1 = manager.default_llm
-      default2 = manager.get_llm  # Uses default parameters
+    it "is equivalent to calling get_chat with defaults" do
+      default1 = manager.default_chat
+      default2 = manager.get_chat
 
-      expect(default1).to be(default2)  # Should be same cached instance
+      expect(default1).to be(default2)
     end
 
-    it "caches the default LLM" do
-      llm1 = manager.default_llm
-      llm2 = manager.default_llm
+    it "caches the default chat" do
+      chat1 = manager.default_chat
+      chat2 = manager.default_chat
 
-      expect(llm1).to be(llm2)  # Same cached instance
+      expect(chat1).to be(chat2)
     end
   end
 
-  describe "integration behavior" do
-    it "maintains cache consistency across method calls" do
-      # Test various method combinations
-      default1 = manager.default_llm
-      custom = manager.get_llm(model_id: "custom/model", gguf_file: "custom.gguf")
-      default2 = manager.default_llm
-
-      expect(default1).to be(default2)  # Default should be cached
+  describe "backwards compatibility" do
+    it "aliases get_llm to get_chat" do
+      expect(manager.method(:get_llm)).not_to be_nil
+      chat = manager.get_llm
+      expect(chat).to be_a(Object)
     end
 
-    it "handles various model identifier formats" do
-      model_ids = [
-        "organization/model-name",
-        "simple-model",
-        "model_with_underscores",
-        "Model-With-Caps"
-      ]
-
-      model_ids.each do |model_id|
-        expect {
-          manager.get_llm(model_id: model_id, gguf_file: "test.gguf")
-        }.not_to raise_error
-      end
-    end
-
-    it "handles various GGUF file formats" do
-      gguf_files = [
-        "model.gguf",
-        "model.Q4_K_M.gguf", 
-        "model.q4_0.gguf",
-        nil
-      ]
-
-      gguf_files.each do |gguf_file|
-        expect {
-          manager.get_llm(model_id: "test/model", gguf_file: gguf_file)
-        }.not_to raise_error
-      end
+    it "aliases default_llm to default_chat" do
+      expect(manager.method(:default_llm)).not_to be_nil
+      chat = manager.default_llm
+      expect(chat).to be_a(Object)
     end
   end
 
   describe "memory management" do
     it "provides cache clearing for memory management" do
-      # Manually populate cache to test clearing (since global mocks prevent real caching)
-      cache = manager.instance_variable_get(:@llms)
-      cache["test1"] = double("LLM1")
-      cache["test2"] = double("LLM2")
-      cache["test3"] = double("LLM3")
+      cache = manager.instance_variable_get(:@chats)
+      cache["test1"] = double("Chat1")
+      cache["test2"] = double("Chat2")
 
       expect(cache).not_to be_empty
 
       manager.clear_cache
-      
+
       expect(cache).to be_empty
     end
   end

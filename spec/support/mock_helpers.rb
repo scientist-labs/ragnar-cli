@@ -23,20 +23,22 @@ module MockHelpers
   
   # Stub LLM to avoid loading models
   def stub_llm
-    mock_llm = double("LLM")
-    allow(mock_llm).to receive(:chat) do |prompt|
-      "Mock response for: #{prompt[0..50]}..."
-    end
-    allow(mock_llm).to receive(:generate) do |prompt|
-      "Mock generated text for: #{prompt[0..50]}..."
-    end
-    
-    # Stub LLMManager
+    mock_chat = mock_ruby_llm_chat
+
+    # Stub LLMManager to return mock chat
     if defined?(Ragnar::LLMManager)
-      allow_any_instance_of(Ragnar::LLMManager).to receive(:get_llm).and_return(mock_llm)
-      allow_any_instance_of(Ragnar::LLMManager).to receive(:default_llm).and_return(mock_llm)
+      allow_any_instance_of(Ragnar::LLMManager).to receive(:get_chat).and_return(mock_chat)
+      allow_any_instance_of(Ragnar::LLMManager).to receive(:default_chat).and_return(mock_chat)
+      # Backwards compat aliases
+      allow_any_instance_of(Ragnar::LLMManager).to receive(:get_llm).and_return(mock_chat)
+      allow_any_instance_of(Ragnar::LLMManager).to receive(:default_llm).and_return(mock_chat)
     end
-    
+
+    # Stub RubyLLM.chat to avoid real provider initialization
+    if defined?(RubyLLM)
+      allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+    end
+
     # Stub QueryRewriter to return predictable results
     if defined?(Ragnar::QueryRewriter)
       allow_any_instance_of(Ragnar::QueryRewriter).to receive(:rewrite) do |_, query|
@@ -48,6 +50,28 @@ module MockHelpers
           'key_terms' => query.split(' ').take(3)
         }
       end
+    end
+  end
+
+  # Create a mock RubyLLM chat object
+  def mock_ruby_llm_chat
+    mock_response = double("RubyLLM::Message")
+    allow(mock_response).to receive(:content) { "Mock generated text" }
+    allow(mock_response).to receive(:input_tokens) { 10 }
+    allow(mock_response).to receive(:output_tokens) { 20 }
+
+    double("RubyLLM::Chat").tap do |chat|
+      allow(chat).to receive(:ask) do |prompt|
+        resp = double("RubyLLM::Message")
+        allow(resp).to receive(:content) { "Mock response for: #{prompt[0..50]}..." }
+        allow(resp).to receive(:input_tokens) { 10 }
+        allow(resp).to receive(:output_tokens) { 20 }
+        resp
+      end
+      allow(chat).to receive(:with_schema) { chat }
+      allow(chat).to receive(:with_instructions) { chat }
+      allow(chat).to receive(:with_temperature) { chat }
+      allow(chat).to receive(:with_model) { chat }
     end
   end
   

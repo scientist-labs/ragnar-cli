@@ -101,8 +101,8 @@ module Ragnar
     option :export, type: :string, desc: "Export topics to file (json or html)"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing"
     option :summarize, type: :boolean, default: false, aliases: "-s", desc: "Generate human-readable topic summaries using LLM"
-    option :llm_model, type: :string, default: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", desc: "LLM model for summarization"
-    option :gguf_file, type: :string, default: "tinyllama-1.1b-chat-v1.0.q4_k_m.gguf", desc: "GGUF file name for LLM model"
+    option :llm_model, type: :string, default: "MaziyarPanahi/Qwen3-4B-GGUF", desc: "LLM model for summarization"
+    option :gguf_file, type: :string, default: "Qwen3-4B.Q4_K_M.gguf", desc: "GGUF file name for LLM model"
     def topics
       require_relative 'topic_modeling'
 
@@ -170,16 +170,12 @@ module Ragnar
         if options[:summarize] && topics.any?
           say "Generating topic summaries with LLM...", :yellow
           begin
-            require 'red-candle'
-
-            # Initialize LLM for summarization once
-            say "Loading model: #{options[:llm_model]}", :cyan if options[:verbose]
-            llm = Candle::LLM.from_pretrained(options[:llm_model], gguf_file: options[:gguf_file])
+            chat = LLMManager.instance.default_chat
 
             # Add summaries to topics
             topics.each_with_index do |topic, i|
               say "  Summarizing topic #{i+1}/#{topics.length}...", :yellow if options[:verbose]
-              topic.instance_variable_set(:@summary, summarize_topic(topic, llm))
+              topic.instance_variable_set(:@summary, summarize_topic(topic, chat))
             end
 
             say "Topic summaries generated!", :green
@@ -640,7 +636,7 @@ module Ragnar
     end
 
 
-    def summarize_topic(topic, llm)
+    def summarize_topic(topic, chat)
       # Get representative documents for context
       sample_docs = topic.representative_docs(k: 3)
 
@@ -657,7 +653,7 @@ module Ragnar
       PROMPT
 
       begin
-        summary = llm.generate(prompt).strip
+        summary = chat.ask(prompt).content.strip
         # Clean up common artifacts
         summary = summary.lines.first&.strip || "Related documents"
         summary = summary.gsub(/^(Summary:|Topic:|Documents:)/i, '').strip

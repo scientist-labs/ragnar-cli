@@ -57,12 +57,20 @@ module Ragnar
       get('embeddings.chunk_overlap', Ragnar::DEFAULT_CHUNK_OVERLAP)
     end
     
-    def llm_model
-      get('llm.default_model', "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF")
+    def llm_provider
+      get('llm.provider', 'red_candle')
     end
-    
+
+    def llm_model
+      get('llm.default_model', "MaziyarPanahi/Qwen3-4B-GGUF")
+    end
+
     def llm_gguf_file
-      get('llm.default_gguf_file', "tinyllama-1.1b-chat-v1.0.q4_k_m.gguf")
+      get('llm.default_gguf_file', "Qwen3-4B.Q4_K_M.gguf")
+    end
+
+    def llm_api_key
+      get('llm.api_key', nil)
     end
     
     def interactive_prompt
@@ -121,8 +129,10 @@ module Ragnar
           'model_filename' => 'umap_model.bin'
         },
         'llm' => {
-          'default_model' => 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF',
-          'default_gguf_file' => 'tinyllama-1.1b-chat-v1.0.q4_k_m.gguf'
+          'provider' => 'red_candle',
+          'default_model' => 'MaziyarPanahi/Qwen3-4B-GGUF',
+          'default_gguf_file' => 'Qwen3-4B.Q4_K_M.gguf',
+          'api_key' => nil
         },
         'query' => {
           'top_k' => 3,

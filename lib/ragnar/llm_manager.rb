@@ -1,46 +1,47 @@
 module Ragnar
-  # Singleton manager for LLM instances to avoid reloading models
+  # Singleton manager for RubyLLM chat instances to avoid reloading models.
+  # Supports any RubyLLM provider (red_candle for local, openai, anthropic, etc.)
   class LLMManager
     include Singleton
-    
+
     def initialize
-      @llms = {}
+      @chats = {}
       @mutex = Mutex.new
     end
-    
-    # Get or create an LLM instance
-    # @param model_id [String] The model identifier
-    # @param gguf_file [String, nil] Optional GGUF file for quantized models
-    # @return [Candle::LLM] The LLM instance
-    def get_llm(model_id: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", 
-                gguf_file: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
-      cache_key = "#{model_id}:#{gguf_file}"
-      
+
+    # Get or create a RubyLLM chat instance
+    # @param provider [String, Symbol] The RubyLLM provider (default from config)
+    # @param model [String] The model identifier (default from config)
+    # @return [RubyLLM::Chat] A cached chat instance
+    def get_chat(provider: nil, model: nil)
+      config = Config.instance
+      provider ||= config.llm_provider
+      model ||= config.llm_model
+
+      cache_key = "#{provider}:#{model}"
+
       @mutex.synchronize do
-        @llms[cache_key] ||= begin
-          # Only show loading message if not in interactive mode or if verbose
-          show_loading = ENV['DEBUG'] # Only show in debug mode for now
-          puts "Loading LLM: #{model_id}..." if show_loading && !@llms.key?(cache_key)
-          
-          if gguf_file
-            Candle::LLM.from_pretrained(model_id, gguf_file: gguf_file)
-          else
-            Candle::LLM.from_pretrained(model_id)
-          end
+        @chats[cache_key] ||= begin
+          puts "Loading LLM: #{model} (#{provider})..." if ENV['DEBUG']
+          RubyLLM.chat(provider: provider.to_sym, model: model)
         end
       end
     end
-    
-    # Clear all cached models (useful for memory management)
+
+    # Clear all cached chat instances (useful for memory management)
     def clear_cache
       @mutex.synchronize do
-        @llms.clear
+        @chats.clear
       end
     end
-    
-    # Get the default LLM for the application
-    def default_llm
-      get_llm
+
+    # Get the default chat instance for the application
+    def default_chat
+      get_chat
     end
+
+    # Backwards compatibility aliases
+    alias_method :get_llm, :get_chat
+    alias_method :default_llm, :default_chat
   end
 end
