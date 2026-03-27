@@ -151,21 +151,39 @@ ragnar index ./documents \
   --chunk-overlap 100
 ```
 
-### 2. Train UMAP (Optional)
+### 2. Interactive Mode (TUI)
+
+Running `ragnar` with no arguments launches an interactive TUI powered by [ratatui](https://ratatui.rs/):
+
+```bash
+# Launch the TUI (default when no command given)
+ragnar
+
+# Or explicitly
+ragnar interactive
+```
+
+The TUI provides:
+- **Auto-completion** for commands and options
+- **Persistent history** across sessions
+- **Live output** — see indexing progress, query results, and topic analysis inline
+- **All CLI commands** available via `/command` syntax (e.g., `/index .`, `/umap train`, `/query "my question"`)
+
+### 3. Train UMAP (Optional)
 
 Reduce embedding dimensions for faster search:
 
 ```bash
 # Train UMAP model (auto-adjusts parameters based on data)
-ragnar train-umap \
+ragnar umap train \
   --n-components 50 \
   --n-neighbors 15
 
 # Apply to all embeddings
-ragnar apply-umap
+ragnar umap apply
 ```
 
-### 3. Extract Topics
+### 4. Extract Topics
 
 Perform topic modeling to discover themes in your indexed documents:
 
@@ -194,7 +212,7 @@ The HTML export includes:
 - **Topic Bubbles**: Interactive bubble chart showing topic sizes and coherence
 - **Embedding Scatter Plot**: Visualization of all documents in embedding space, colored by cluster
 
-### 4. Query the System
+### 5. Query the System
 
 ```bash
 # Basic query
@@ -226,7 +244,7 @@ When using `--verbose` or `-v`, you'll see:
 6. **Response Generation**: The final LLM prompt and response
 7. **Final Results**: Confidence score and source attribution
 
-### 5. Check Statistics
+### 6. Check Statistics
 
 ```bash
 ragnar stats
@@ -338,11 +356,10 @@ ragnar config
 ragnar model
 ```
 
-In interactive mode:
+In interactive mode (launch with `ragnar`):
 ```bash
-ragnar interactive
-ragnar> config    # Show configuration
-ragnar> model     # Show model details
+ragnar> /config    # Show configuration
+ragnar> /model     # Show model details
 ```
 
 ### Environment Variables
@@ -586,5 +603,7 @@ This project integrates several excellent Ruby gems:
 - [red-candle](https://github.com/assaydepot/red-candle) - Ruby ML/LLM toolkit
 - [lancelot](https://github.com/scientist-labs/lancelot) - Lance database bindings
 - [clusterkit](https://github.com/scientist-labs/clusterkit) - UMAP and clustering implementation
+- [thor-interactive](https://github.com/scientist-labs/thor-interactive) - Interactive TUI for Thor CLIs
+- [ratatui_ruby](https://github.com/nicholasgasior/ratatui-ruby) - Ratatui terminal UI bindings
 - [parsekit](https://github.com/scientist-labs/parsekit) - Content extraction
 - [baran](https://github.com/moeki0/baran) - Text splitting utilities

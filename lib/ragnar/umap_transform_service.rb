@@ -160,7 +160,7 @@ module Ragnar
       return if @umap_model
       
       unless File.exist?(@model_path)
-        raise "UMAP model not found at #{@model_path}. Please train a model first using 'ragnar train-umap'."
+        raise "UMAP model not found at #{@model_path}. Please train a model first using 'ragnar umap train'."
       end
       
       @umap_model = ClusterKit::Dimensionality::UMAP.load_model(@model_path)
