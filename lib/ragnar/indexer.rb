@@ -31,7 +31,7 @@ module Ragnar
 
       puts "Found #{files.size} file(s) to process" if @show_progress
 
-      file_progress = if @show_progress
+      file_progress = if @show_progress && $stdout.respond_to?(:ioctl)
         TTY::ProgressBar.new(
           "Processing [:bar] :percent :current/:total - :filename",
           total: files.size,
@@ -43,13 +43,15 @@ module Ragnar
         nil
       end
 
-      files.each do |file_path|
+      files.each_with_index do |file_path, idx|
         begin
           if file_progress
             # Update the progress bar with current filename
             filename = File.basename(file_path)
             filename = filename[0..27] + "..." if filename.length > 30
             file_progress.advance(0, filename: filename)
+          elsif @show_progress
+            puts "Processing (#{idx + 1}/#{files.size}): #{File.basename(file_path)}"
           end
 
           process_file(file_path, stats, file_progress)

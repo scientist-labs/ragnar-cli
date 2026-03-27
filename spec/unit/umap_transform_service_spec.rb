@@ -336,7 +336,7 @@ RSpec.describe Ragnar::UmapTransformService do
         it "raises error with helpful message" do
           expect {
             service.send(:load_model!)
-          }.to raise_error(/UMAP model not found.*train-umap/)
+          }.to raise_error(/UMAP model not found.*umap train/)
         end
       end
     end

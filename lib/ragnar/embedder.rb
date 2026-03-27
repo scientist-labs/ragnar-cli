@@ -34,7 +34,7 @@ module Ragnar
     def embed_batch(texts, show_progress: true)
       embeddings = []
       
-      if show_progress
+      if show_progress && $stdout.respond_to?(:ioctl)
         progressbar = TTY::ProgressBar.new(
           "Generating embeddings [:bar] :percent :current/:total",
           total: texts.size,

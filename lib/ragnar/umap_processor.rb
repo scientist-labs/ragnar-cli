@@ -138,45 +138,69 @@ module Ragnar
       
       # Perform the actual training using the class-based API
       puts "  Training UMAP model (this may take a moment)..."
-      
+
+      attempts = 0
+      max_attempts = 3
+
       begin
+        attempts += 1
         @umap_instance = ClusterKit::Dimensionality::UMAP.new(
           n_components: n_components,
           n_neighbors: n_neighbors
         )
-        
+
         @reduced_embeddings = @umap_instance.fit_transform(embedding_matrix)
-        
+
         puts "  ✓ UMAP training complete"
-      rescue => e
-        # Provide helpful error message without exposing internal stack trace
-        error_msg = "\n❌ UMAP training failed\n\n"
-        
-        if e.message.include?("index out of bounds")
-          error_msg += "The UMAP algorithm encountered an index out of bounds error.\n\n"
-          error_msg += "This typically happens when:\n"
-          error_msg += "  • The embedding data contains invalid values (NaN, Infinity)\n"
-          error_msg += "  • The parameters are incompatible with your data\n"
-          error_msg += "  • There are duplicate or corrupted embeddings\n\n"
-          error_msg += "Suggested solutions:\n"
-          error_msg += "  1. Try with more conservative parameters:\n"
-          error_msg += "     ragnar train-umap --n-components 10 --n-neighbors 5\n\n"
-          error_msg += "  2. Re-index your documents to regenerate embeddings:\n"
-          error_msg += "     ragnar index <path> --force\n\n"
-          error_msg += "  3. Check your embedding model configuration\n\n"
-          error_msg += "Current parameters:\n"
-          error_msg += "  • n_components: #{n_components}\n"
-          error_msg += "  • n_neighbors: #{n_neighbors}\n"
-          error_msg += "  • embeddings: #{embeddings.size} samples\n"
-          error_msg += "  • dimensions: #{original_dims}\n"
+      rescue Exception => e
+        # Catch Exception (not just StandardError) because Rust panics from
+        # ClusterKit raise fatal errors that bypass the default rescue
+        if e.message.include?("LapackInvalidValue") || e.message.include?("SGESDD") || e.message.include?("illegal value")
+          if attempts < max_attempts
+            # LAPACK SVD can fail with certain dimension combinations — retry with fewer components
+            n_components = [n_components / 2, 2].max
+            n_neighbors = [n_neighbors, n_components - 1, 3].min
+            puts "  ⚠️  LAPACK error, retrying with n_components=#{n_components}, n_neighbors=#{n_neighbors} (attempt #{attempts + 1}/#{max_attempts})..."
+            retry
+          end
+
+          raise RuntimeError, "\n❌ UMAP training failed due to a LAPACK numerical error.\n\n" \
+            "This can happen with certain data/dimension combinations.\n" \
+            "Try reducing n_components:\n" \
+            "  ragnar umap train --n-components 10 --n-neighbors 5\n\n" \
+            "Current parameters:\n" \
+            "  • n_components: #{n_components}\n" \
+            "  • n_neighbors: #{n_neighbors}\n" \
+            "  • embeddings: #{embeddings.size} samples\n" \
+            "  • dimensions: #{original_dims}\n"
+        elsif e.message.include?("index out of bounds")
+          raise RuntimeError, "\n❌ UMAP training failed\n\n" \
+            "The UMAP algorithm encountered an index out of bounds error.\n\n" \
+            "This typically happens when:\n" \
+            "  • The embedding data contains invalid values (NaN, Infinity)\n" \
+            "  • The parameters are incompatible with your data\n" \
+            "  • There are duplicate or corrupted embeddings\n\n" \
+            "Suggested solutions:\n" \
+            "  1. Try with more conservative parameters:\n" \
+            "     ragnar umap train --n-components 10 --n-neighbors 5\n\n" \
+            "  2. Re-index your documents to regenerate embeddings:\n" \
+            "     ragnar index <path> --force\n\n" \
+            "  3. Check your embedding model configuration\n\n" \
+            "Current parameters:\n" \
+            "  • n_components: #{n_components}\n" \
+            "  • n_neighbors: #{n_neighbors}\n" \
+            "  • embeddings: #{embeddings.size} samples\n" \
+            "  • dimensions: #{original_dims}\n"
+        elsif e.is_a?(StandardError) || e.message.include?("unwrap")
+          raise RuntimeError, "\n❌ UMAP training failed\n\n" \
+            "Error: #{e.message}\n\n" \
+            "This may be due to incompatible parameters or data issues.\n" \
+            "Try using more conservative parameters:\n" \
+            "  ragnar umap train --n-components 10 --n-neighbors 5\n"
         else
-          error_msg += "Error: #{e.message}\n\n"
-          error_msg += "This may be due to incompatible parameters or data issues.\n"
-          error_msg += "Try using more conservative parameters:\n"
-          error_msg += "  ragnar train-umap --n-components 10 --n-neighbors 5\n"
+          # Re-raise non-application exceptions (Interrupt, SignalException, etc.)
+          raise
         end
-        
-        raise RuntimeError, error_msg
       end
       
       # Store the parameters for saving
