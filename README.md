@@ -168,6 +168,8 @@ The TUI provides:
 - **Persistent history** across sessions
 - **Live output** — see indexing progress, query results, and topic analysis inline
 - **All CLI commands** available via `/command` syntax (e.g., `/index .`, `/umap train`, `/query "my question"`)
+- **`/verbose`** — toggle verbose mode to see query pipeline details (retrieval, reranking, context)
+- **`/profile`** — list or switch LLM profiles mid-session
 
 ### 3. Train UMAP (Optional)
 

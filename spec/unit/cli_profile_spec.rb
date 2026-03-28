@@ -62,3 +62,26 @@ RSpec.describe "CLI profile command" do
     end
   end
 end
+
+RSpec.describe "CLI verbose command" do
+  before do
+    Ragnar::CLI.class_variable_set(:@@verbose_mode, false)
+  end
+
+  it "toggles verbose mode on" do
+    output = capture_stdout do
+      Ragnar::CLI.start(["verbose"])
+    end
+    expect(output).to include("Verbose mode: on")
+    expect(Ragnar::CLI.class_variable_get(:@@verbose_mode)).to be true
+  end
+
+  it "toggles verbose mode off" do
+    Ragnar::CLI.class_variable_set(:@@verbose_mode, true)
+    output = capture_stdout do
+      Ragnar::CLI.start(["verbose"])
+    end
+    expect(output).to include("Verbose mode: off")
+    expect(Ragnar::CLI.class_variable_get(:@@verbose_mode)).to be false
+  end
+end

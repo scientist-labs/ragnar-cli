@@ -43,6 +43,7 @@ module Ragnar
     class_variable_set(:@@cached_llm_manager, nil)
     class_variable_set(:@@cached_query_processor, nil)
     class_variable_set(:@@cached_db_path, nil)
+    class_variable_set(:@@verbose_mode, false)
 
     desc "index PATH", "Index text files from PATH (file or directory)"
     option :db_path, type: :string, desc: "Path to Lance database (default from config)"
@@ -259,7 +260,7 @@ module Ragnar
         result = processor.query(
           question,
           top_k: options[:top_k] || config.query_top_k,
-          verbose: options[:verbose] || false,
+          verbose: options[:verbose] || @@verbose_mode,
           enable_rewriting: config.enable_query_rewriting?,
           enable_reranking: options[:rerank].nil? ? config.enable_reranking? : options[:rerank]
         )
@@ -439,6 +440,12 @@ module Ragnar
           say "    Model: #{pconfig['model']}"
         end
       end
+    end
+
+    desc "verbose", "Toggle verbose mode on/off"
+    def verbose
+      @@verbose_mode = !@@verbose_mode
+      say "Verbose mode: #{@@verbose_mode ? 'on' : 'off'}", @@verbose_mode ? :green : :yellow
     end
 
     desc "clear-cache", "Clear cached instances (useful in interactive mode)"
