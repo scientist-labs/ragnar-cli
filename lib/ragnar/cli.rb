@@ -397,22 +397,35 @@ module Ragnar
     desc "model", "Show current LLM model information"
     def model
       config = Config.instance
-      
+
       say "\nLLM Model Configuration:", :cyan
       say "-" * 40
-      
-      say "\nModel:", :green
-      say "  Repository: #{config.llm_model}"
-      say "  GGUF file: #{config.llm_gguf_file}"
-      
-      # Check if model files exist
-      model_path = File.join(config.models_dir, config.llm_gguf_file)
-      if File.exist?(model_path)
-        size_mb = (File.size(model_path) / 1024.0 / 1024.0).round(2)
-        say "\nModel file exists: #{model_path} (#{size_mb} MB)", :green
+
+      say "\nProfile: #{config.llm_profile_name}", :green
+      say "  Provider: #{config.llm_provider}"
+      say "  Model: #{config.llm_model}"
+
+      # Only show GGUF/local file info for local providers
+      if config.llm_provider == 'red_candle'
+        say "\nEmbedding Model: #{config.embedding_model}"
+
+        # Check if model files exist in HuggingFace cache
+        hf_cache = File.expand_path("~/.cache/huggingface/hub")
+        model_dir = config.llm_model.gsub("/", "--")
+        model_cache = File.join(hf_cache, "models--#{model_dir}")
+        if Dir.exist?(model_cache)
+          say "\nModel cached: #{model_cache}", :green
+        else
+          say "\nModel not yet downloaded (will download on first use)", :yellow
+        end
       else
-        say "\nModel file not found: #{model_path}", :yellow
-        say "Run 'ragnar query' to download automatically", :yellow
+        api_key = config.llm_api_key
+        env_key = case config.llm_provider
+                  when 'anthropic' then ENV['ANTHROPIC_API_KEY']
+                  when 'openai' then ENV['OPENAI_API_KEY']
+                  end
+        has_key = api_key || env_key
+        say "\nAPI key: #{has_key ? 'configured' : 'not set'}", has_key ? :green : :red
       end
     end
 

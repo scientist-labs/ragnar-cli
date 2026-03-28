@@ -275,22 +275,43 @@ module Ragnar
           k: k,
           use_reduced: use_reduced
         )
-        
+
         if verbose
-          puts "  Found #{vector_results.length} matches"
+          puts "  Vector search: #{vector_results.length} matches"
           if vector_results.any?
             best = vector_results.first
-            puts "  Best match: [#{File.basename(best[:file_path] || 'unknown')}] (distance: #{best[:distance]&.round(3)})"
+            puts "  Best vector match: [#{File.basename(best[:file_path] || 'unknown')}] (distance: #{best[:distance]&.round(3)})"
           end
         end
-        
+
         # Add query index for RRF
         vector_results.each do |result|
           result[:query_idx] = idx
           result[:retrieval_method] = :vector
         end
-        
+
         all_results.concat(vector_results)
+
+        # Full-text search for keyword matching (hybrid search)
+        begin
+          fts_results = @database.full_text_search(query, limit: k)
+          if verbose && fts_results.any?
+            puts "  FTS: #{fts_results.length} matches"
+            best_fts = fts_results.first
+            puts "  Best FTS match: [#{File.basename(best_fts[:file_path] || 'unknown')}]"
+          end
+
+          fts_results.each_with_index do |result, rank|
+            # Synthesize a distance from FTS rank (lower rank = better match)
+            result[:distance] = 0.1 + (rank * 0.05)
+            result[:query_idx] = idx
+            result[:retrieval_method] = :fts
+          end
+
+          all_results.concat(fts_results)
+        rescue => e
+          puts "  FTS unavailable: #{e.message}" if verbose
+        end
       end
       
       if verbose

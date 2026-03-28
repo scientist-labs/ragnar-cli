@@ -121,6 +121,7 @@ module MockHelpers
         end
       end
       
+      allow(db).to receive(:full_text_search).and_return([])
       allow(db).to receive(:dataset_exists?).and_return(true)
       allow(db).to receive(:get_stats) do
         {
