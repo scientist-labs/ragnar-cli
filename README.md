@@ -2,6 +2,10 @@
 
 A complete Ruby implementation of Retrieval-Augmented Generation (RAG) pipeline using native Ruby ML/NLP gems.
 
+<p align="center">
+  <img src="/docs/assets/screenshot.png" alt="ragnar TUI" width="600">
+</p>
+
 ## Overview
 
 Ragnar provides a production-ready RAG pipeline for Ruby applications, integrating:
