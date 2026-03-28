@@ -128,6 +128,30 @@ RSpec.describe Ragnar::QueryProcessor do
     end
   end
 
+  describe "#query with reranking enabled" do
+    it "uses the configured reranker model" do
+      allow(Ragnar::Config.instance).to receive(:reranker_model).and_return("custom/reranker")
+      mock_reranker = double("Reranker")
+      allow(mock_reranker).to receive(:rerank).and_return([
+        { doc_id: 0, score: 1.0, text: "result" }
+      ])
+      allow(Candle::Reranker).to receive(:from_pretrained)
+        .with("custom/reranker").and_return(mock_reranker)
+
+      result = processor.query("test", top_k: 2, enable_reranking: true)
+      expect(Candle::Reranker).to have_received(:from_pretrained).with("custom/reranker")
+    end
+
+    it "falls back to retrieval order when reranker fails to load" do
+      allow(Candle::Reranker).to receive(:from_pretrained)
+        .and_raise("Failed to load model: unsupported architecture")
+
+      result = processor.query("test", top_k: 2, enable_reranking: true)
+      expect(result[:answer]).to be_a(String)
+      expect(result[:sources]).to be_an(Array)
+    end
+  end
+
   describe "#query always includes original query in sub-queries" do
     it "prepends original query to sub-queries" do
       result = processor.query("my specific question", top_k: 2)
