@@ -371,6 +371,88 @@ RSpec.describe Ragnar::Config do
     end
   end
 
+  describe '#create_chat' do
+    before do
+      File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+        llm:
+          default_profile: local
+          profiles:
+            local:
+              provider: red_candle
+              model: test/model
+            cloud:
+              provider: anthropic
+              model: claude-opus-4-6
+              api_key: sk-test
+      YAML
+    end
+
+    it 'creates a RubyLLM chat with active profile settings' do
+      config = fresh_config
+      mock_chat = double("RubyLLM::Chat")
+      allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+
+      result = config.create_chat
+      expect(RubyLLM).to have_received(:chat).with(provider: :red_candle, model: 'test/model')
+      expect(result).to eq(mock_chat)
+    end
+
+    it 'configures API key for anthropic provider' do
+      config = fresh_config
+      config.set_active_profile('cloud')
+      mock_chat = double("RubyLLM::Chat")
+      allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+      allow(RubyLLM).to receive(:configure).and_yield(double(anthropic_api_key: nil).as_null_object)
+
+      config.create_chat
+      expect(RubyLLM).to have_received(:configure)
+    end
+
+    it 'does not configure API key when none is set' do
+      config = fresh_config
+      mock_chat = double("RubyLLM::Chat")
+      allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+      allow(RubyLLM).to receive(:configure)
+
+      config.create_chat
+      expect(RubyLLM).not_to have_received(:configure)
+    end
+  end
+
+  describe 'reranking config' do
+    context 'with reranking settings' do
+      before do
+        File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+          query:
+            enable_reranking: false
+            reranker_model: custom/reranker
+        YAML
+      end
+
+      it 'reads enable_reranking setting' do
+        config = fresh_config
+        expect(config.enable_reranking?).to be false
+      end
+
+      it 'reads reranker_model setting' do
+        config = fresh_config
+        expect(config.reranker_model).to eq('custom/reranker')
+      end
+    end
+
+    context 'with defaults' do
+      it 'defaults reranking to true' do
+        config = fresh_config
+        expect(config.enable_reranking?).to be true
+      end
+
+      it 'defaults reranker model to bge-reranker-base' do
+        config = fresh_config
+        expect(config.reranker_model).to eq('BAAI/bge-reranker-base')
+      end
+    end
+  end
+
   describe 'XDG Base Directory support' do
     it 'respects XDG_CACHE_HOME environment variable' do
       xdg_cache = File.join(temp_dir, 'xdg_cache')

@@ -136,7 +136,7 @@ RSpec.describe "Configuration Functionality" do
         'embeddings' => ['model', 'chunk_size', 'chunk_overlap'],
         'umap' => ['reduced_dimensions', 'n_neighbors', 'min_dist', 'model_filename'],
         'llm' => ['default_profile', 'profiles'],
-        'query' => ['top_k', 'enable_query_rewriting'],
+        'query' => ['top_k', 'enable_query_rewriting', 'enable_reranking', 'reranker_model'],
         'interactive' => ['prompt', 'quiet_mode'],
         'output' => ['show_progress']
       }

@@ -16,7 +16,7 @@ module Ragnar
       @reranker = nil # Will initialize when needed
     end
     
-    def query(user_query, top_k: 3, verbose: false, enable_rewriting: true)
+    def query(user_query, top_k: 3, verbose: false, enable_rewriting: true, enable_reranking: false)
       puts "Processing query: #{user_query}" if verbose
       
       # Step 1: Rewrite and analyze the query (if enabled)
@@ -26,7 +26,15 @@ module Ragnar
         puts "-"*60 if verbose
         
         rewritten = @rewriter.rewrite(user_query)
-        
+
+        # Always include the original query in sub-queries to ensure direct matches
+        # are found regardless of how the rewriter reformulates
+        sub_queries = rewritten['sub_queries'] || []
+        unless sub_queries.include?(user_query)
+          sub_queries.unshift(user_query)
+        end
+        rewritten['sub_queries'] = sub_queries
+
         if verbose
           puts "\nOriginal Query: #{user_query}"
           puts "\nRewritten Query Analysis:"
@@ -95,18 +103,25 @@ module Ragnar
         puts "-"*60
       end
       
-      reranked = rerank_documents(
-        query: user_query,
-        documents: candidates,
-        top_k: top_k * 2  # Get more than we need for context
-      )
-      
+      if enable_reranking
+        reranked = rerank_documents(
+          query: user_query,
+          documents: candidates,
+          top_k: top_k * 2
+        )
+      else
+        # Use retrieval order (RRF scores) directly — often more reliable than
+        # small cross-encoder rerankers on domain-specific corpora
+        reranked = candidates
+      end
+
       if verbose && reranked.any?
-        puts "\nTop Reranked Documents:"
+        puts "\nTop #{enable_reranking ? 'Reranked' : 'Retrieved'} Documents:"
         reranked[0..2].each_with_index do |doc, idx|
           full_text = (doc[:chunk_text] || doc[:text] || "").gsub(/\s+/, ' ')
           puts "  #{idx + 1}. [#{File.basename(doc[:file_path] || 'unknown')}]"
           puts "     Score: #{doc[:score]&.round(4) if doc[:score]}"
+          puts "     Distance: #{doc[:distance]&.round(4) if doc[:distance]}"
           puts "     Full chunk (#{full_text.length} chars):"
           puts "     \"#{full_text}\""
           puts ""
@@ -337,7 +352,7 @@ module Ragnar
       
       # Initialize reranker if not already done
       @reranker ||= Candle::Reranker.from_pretrained(
-        "BAAI/bge-reranker-base"
+        Config.instance.reranker_model
       )
       
       # Prepare document texts - use chunk_text field

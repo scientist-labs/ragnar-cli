@@ -146,6 +146,14 @@ module Ragnar
     def enable_query_rewriting?
       get('query.enable_query_rewriting', true)
     end
+
+    def enable_reranking?
+      get('query.enable_reranking', true)
+    end
+
+    def reranker_model
+      get('query.reranker_model', 'BAAI/bge-reranker-base')
+    end
     
     # Config file management
     def config_file_path
@@ -201,7 +209,9 @@ module Ragnar
         },
         'query' => {
           'top_k' => 3,
-          'enable_query_rewriting' => true
+          'enable_query_rewriting' => true,
+          'enable_reranking' => true,
+          'reranker_model' => 'BAAI/bge-reranker-base'
         },
         'interactive' => {
           'prompt' => 'ragnar> ',

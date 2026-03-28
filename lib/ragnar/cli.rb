@@ -244,6 +244,7 @@ module Ragnar
     option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
+    option :rerank, type: :boolean, default: nil, desc: "Enable cross-encoder reranking (default from config)"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
     def query(question)
       apply_profile!
@@ -256,10 +257,11 @@ module Ragnar
       begin
         config = Config.instance
         result = processor.query(
-          question, 
-          top_k: options[:top_k] || config.query_top_k, 
+          question,
+          top_k: options[:top_k] || config.query_top_k,
           verbose: options[:verbose] || false,
-          enable_rewriting: config.enable_query_rewriting?
+          enable_rewriting: config.enable_query_rewriting?,
+          enable_reranking: options[:rerank].nil? ? config.enable_reranking? : options[:rerank]
         )
         puts "Debug - Result keys: #{result.keys}" if ENV['DEBUG']
 
@@ -387,6 +389,8 @@ module Ragnar
       say "\nQuery:", :cyan
       say "  Top K: #{config.query_top_k}"
       say "  Query rewriting: #{config.enable_query_rewriting?}"
+      say "  Reranking: #{config.enable_reranking?}"
+      say "  Reranker model: #{config.reranker_model}" if config.enable_reranking?
     end
     
     desc "model", "Show current LLM model information"
