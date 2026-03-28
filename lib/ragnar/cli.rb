@@ -12,6 +12,8 @@ module Ragnar
 
     default_command :interactive
 
+    class_option :profile, type: :string, aliases: "-p", desc: "LLM profile to use (e.g., red_candle, opus, sonnet)"
+
     # Configure interactive mode
     configure_interactive(
       prompt: Config.instance.interactive_prompt,
@@ -104,6 +106,7 @@ module Ragnar
     option :llm_model, type: :string, default: "MaziyarPanahi/Qwen3-4B-GGUF", desc: "LLM model for summarization"
     option :gguf_file, type: :string, default: "Qwen3-4B.Q4_K_M.gguf", desc: "GGUF file name for LLM model"
     def topics
+      apply_profile!
       require_relative 'topic_modeling'
 
       say "Extracting topics from indexed documents...", :green
@@ -243,6 +246,7 @@ module Ragnar
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
     def query(question)
+      apply_profile!
       puts "Debug - Query called with: #{question.inspect}" if ENV['DEBUG']
       puts "Debug - Options: #{options.inspect}" if ENV['DEBUG']
 
@@ -368,8 +372,12 @@ module Ragnar
       say "  Chunk overlap: #{config.chunk_overlap}"
       
       say "\nLLM:", :cyan
+      say "  Active profile: #{config.llm_profile_name}", :green
+      say "  Provider: #{config.llm_provider}"
       say "  Model: #{config.llm_model}"
-      say "  GGUF file: #{config.llm_gguf_file}"
+      if config.available_profiles.size > 1
+        say "  Available profiles: #{config.available_profiles.join(', ')}"
+      end
       
       say "\nUMAP:", :cyan
       say "  Reduced dimensions: #{config.get('umap.reduced_dimensions', Ragnar::DEFAULT_REDUCED_DIMENSIONS)}"
@@ -400,6 +408,32 @@ module Ragnar
       else
         say "\nModel file not found: #{model_path}", :yellow
         say "Run 'ragnar query' to download automatically", :yellow
+      end
+    end
+
+    desc "profile [NAME]", "Show or switch LLM profile"
+    def profile(name = nil)
+      config = Config.instance
+
+      if name
+        begin
+          config.set_active_profile(name)
+          LLMManager.instance.clear_cache
+          say "Switched to profile: #{name}", :green
+          say "  Provider: #{config.llm_provider}"
+          say "  Model: #{config.llm_model}"
+        rescue ArgumentError => e
+          say e.message, :red
+        end
+      else
+        say "\nLLM Profiles:", :cyan
+        say "-" * 40
+        config.llm_profiles.each do |pname, pconfig|
+          active = pname == config.llm_profile_name ? " (active)" : ""
+          say "  #{pname}#{active}", active.empty? ? :white : :green
+          say "    Provider: #{pconfig['provider']}"
+          say "    Model: #{pconfig['model']}"
+        end
       end
     end
 
@@ -589,6 +623,12 @@ module Ragnar
     end
 
     private
+
+    def apply_profile!
+      return unless options[:profile]
+      Config.instance.set_active_profile(options[:profile])
+      LLMManager.instance.clear_cache
+    end
 
     # Cached instance helpers for interactive mode
     def get_cached_database(db_path = nil)

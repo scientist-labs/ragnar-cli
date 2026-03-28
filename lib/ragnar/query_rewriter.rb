@@ -6,8 +6,7 @@ module Ragnar
 
     def rewrite(query)
       # Create a fresh chat for each rewrite to avoid conversation history bleed
-      config = Config.instance
-      chat = RubyLLM.chat(provider: config.llm_provider.to_sym, model: config.llm_model)
+      chat = Config.instance.create_chat
 
       # Define the JSON schema for structured output
       schema = {
@@ -49,7 +48,7 @@ module Ragnar
 
         User Query: #{query}
 
-        Provide a structured analysis that will help retrieve the most relevant documents.
+        Provide a structured analysis that will help retrieve the most relevant documents. /no_think
       PROMPT
 
       begin

@@ -135,7 +135,7 @@ RSpec.describe "Configuration Functionality" do
         'storage' => ['database_path', 'models_dir', 'history_file'],
         'embeddings' => ['model', 'chunk_size', 'chunk_overlap'],
         'umap' => ['reduced_dimensions', 'n_neighbors', 'min_dist', 'model_filename'],
-        'llm' => ['provider', 'default_model', 'default_gguf_file', 'api_key'],
+        'llm' => ['default_profile', 'profiles'],
         'query' => ['top_k', 'enable_query_rewriting'],
         'interactive' => ['prompt', 'quiet_mode'],
         'output' => ['show_progress']

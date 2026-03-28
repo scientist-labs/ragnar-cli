@@ -288,6 +288,89 @@ RSpec.describe Ragnar::Config do
     end
   end
   
+  describe 'LLM profiles' do
+    context 'with profiles configured' do
+      before do
+        File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+          llm:
+            default_profile: local
+            profiles:
+              local:
+                provider: red_candle
+                model: MaziyarPanahi/Qwen3-4B-GGUF
+              opus:
+                provider: anthropic
+                model: claude-opus-4-6
+              sonnet:
+                provider: anthropic
+                model: claude-sonnet-4-6
+                api_key: sk-test-key
+        YAML
+      end
+
+      it 'returns available profiles' do
+        config = fresh_config
+        expect(config.available_profiles).to contain_exactly('local', 'opus', 'sonnet')
+      end
+
+      it 'uses default_profile as active' do
+        config = fresh_config
+        expect(config.llm_profile_name).to eq('local')
+        expect(config.llm_provider).to eq('red_candle')
+        expect(config.llm_model).to eq('MaziyarPanahi/Qwen3-4B-GGUF')
+      end
+
+      it 'switches profile with set_active_profile' do
+        config = fresh_config
+        config.set_active_profile('opus')
+        expect(config.llm_profile_name).to eq('opus')
+        expect(config.llm_provider).to eq('anthropic')
+        expect(config.llm_model).to eq('claude-opus-4-6')
+      end
+
+      it 'reads api_key from profile' do
+        config = fresh_config
+        config.set_active_profile('sonnet')
+        expect(config.llm_api_key).to eq('sk-test-key')
+      end
+
+      it 'raises on unknown profile' do
+        config = fresh_config
+        expect { config.set_active_profile('nonexistent') }.to raise_error(ArgumentError, /Unknown profile/)
+      end
+
+      it 'includes available profiles in error message' do
+        config = fresh_config
+        expect { config.set_active_profile('bad') }.to raise_error(ArgumentError, /local, opus, sonnet/)
+      end
+    end
+
+    context 'without profiles (backwards compat)' do
+      before do
+        File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+          llm:
+            provider: red_candle
+            default_model: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF
+        YAML
+      end
+
+      it 'synthesizes a default profile from flat keys' do
+        config = fresh_config
+        expect(config.available_profiles).to eq(['default'])
+        expect(config.llm_provider).to eq('red_candle')
+        expect(config.llm_model).to eq('TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF')
+      end
+    end
+
+    context 'with no config file' do
+      it 'uses built-in defaults' do
+        config = fresh_config
+        expect(config.llm_provider).to eq('red_candle')
+        expect(config.llm_model).to eq('MaziyarPanahi/Qwen3-4B-GGUF')
+      end
+    end
+  end
+
   describe 'XDG Base Directory support' do
     it 'respects XDG_CACHE_HOME environment variable' do
       xdg_cache = File.join(temp_dir, 'xdg_cache')

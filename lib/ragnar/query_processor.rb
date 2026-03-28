@@ -96,7 +96,7 @@ module Ragnar
       end
       
       reranked = rerank_documents(
-        query: rewritten['clarified_intent'],
+        query: user_query,
         documents: candidates,
         top_k: top_k * 2  # Get more than we need for context
       )
@@ -174,7 +174,7 @@ module Ragnar
         query: user_query,
         clarified: rewritten['clarified_intent'],
         answer: response,
-        sources: context_docs.map { |d| 
+        sources: context_docs.map { |d|
           {
             source_file: d[:file_path] || d[:source_file],
             chunk_index: d[:chunk_index]
@@ -337,14 +337,14 @@ module Ragnar
       
       # Initialize reranker if not already done
       @reranker ||= Candle::Reranker.from_pretrained(
-        "cross-encoder/ms-marco-MiniLM-L-12-v2"
+        "BAAI/bge-reranker-base"
       )
       
       # Prepare document texts - use chunk_text field
       texts = unique_docs.map { |doc| doc[:chunk_text] || doc[:text] || "" }
       
-      # Rerank - returns array of {doc_id:, score:, text:}
-      reranked = @reranker.rerank(query, texts)
+      # Rerank - use raw logits (no sigmoid) for better score separation
+      reranked = @reranker.rerank(query, texts, apply_sigmoid: false)
       
       # Map back to original documents with scores
       reranked.map do |result|
@@ -361,8 +361,8 @@ module Ragnar
       # In the future, we could fetch neighboring chunks for more context
       context_size = case context_needed
                      when "extensive" then 5
-                     when "moderate" then 3
-                     else 2
+                     when "moderate" then 4
+                     else 3
                      end
       
       documents.first(context_size)
@@ -370,21 +370,28 @@ module Ragnar
     
     def generate_response(query:, repacked_context:, query_type:)
       # Create a fresh chat for each query to avoid conversation history bleed
-      config = Config.instance
-      chat = RubyLLM.chat(provider: config.llm_provider.to_sym, model: config.llm_model)
+      chat = Config.instance.create_chat
       chat.with_instructions(
         "You are a helpful assistant. Answer questions based ONLY on the provided context. " \
-        "If the answer is not in the context, say \"I don't have enough information to answer that question.\""
+        "If the answer is not in the context, say \"I don't have enough information to answer that question.\" " \
+        "Be concise and direct. /no_think"
       )
 
       prompt = "Context:\n#{repacked_context}\n\nQuestion: #{query}"
-      chat.ask(prompt).content
+      response = chat.ask(prompt).content
+      # Strip <think>...</think> blocks that some models (e.g. Qwen3) include
+      strip_think_tags(response)
     rescue => e
       # Fallback to returning the repacked context
       puts "Warning: LLM generation failed (#{e.message})"
       "Based on the retrieved information:\n\n#{repacked_context[0..500]}..."
     end
     
+    def strip_think_tags(text)
+      return text unless text
+      text.gsub(/<think>.*?<\/think>/m, '').strip
+    end
+
     def calculate_confidence(documents)
       return 0.0 if documents.empty?
       

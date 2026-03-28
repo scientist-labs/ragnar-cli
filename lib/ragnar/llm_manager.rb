@@ -23,7 +23,7 @@ module Ragnar
       @mutex.synchronize do
         @chats[cache_key] ||= begin
           puts "Loading LLM: #{model} (#{provider})..." if ENV['DEBUG']
-          RubyLLM.chat(provider: provider.to_sym, model: model)
+          Config.instance.create_chat
         end
       end
     end
