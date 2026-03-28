@@ -191,10 +191,10 @@ module Ragnar
         answer: response,
         sources: context_docs.map { |d|
           {
-            source_file: d[:file_path] || d[:source_file],
-            chunk_index: d[:chunk_index]
+            source_file: d[:file_path] || d[:source_file] || d["file_path"],
+            chunk_index: d[:chunk_index] || d["chunk_index"]
           }
-        },
+        }.reject { |s| s[:source_file].nil? },
         sub_queries: rewritten['sub_queries'],
         confidence: calculate_confidence(reranked[0...top_k])
       }
@@ -335,10 +335,18 @@ module Ragnar
       
       results.each do |result|
         doc_id = result[:id]
-        doc_scores[doc_id] ||= {
-          score: 0.0,
-          document: result
-        }
+        if doc_scores[doc_id]
+          # Prefer the document with more complete metadata
+          existing = doc_scores[doc_id][:document]
+          if result[:file_path] && !existing[:file_path]
+            doc_scores[doc_id][:document] = result
+          end
+        else
+          doc_scores[doc_id] = {
+            score: 0.0,
+            document: result
+          }
+        end
         
         # RRF formula: 1 / (k + rank)
         # Using distance as a proxy for rank (lower distance = better rank)
