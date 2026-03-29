@@ -11,6 +11,12 @@ require_relative "tools/ask_user"
 
 module Ragnar
   module Tools
+    # All tools the agent can use. Each is a RubyLLM::Tool subclass.
+    # The Agent registers these with the LLM chat — the LLM sees their
+    # descriptions and JSON schemas, and can call any of them.
+    #
+    # To add a new tool: create a class in tools/, add it here.
+    # The LLM will discover it automatically on the next conversation.
     ALL = [
       Tools::ReadFile,
       Tools::WriteFile,

@@ -5,6 +5,14 @@ require "shellwords"
 
 module Ragnar
   module Tools
+    # Every tool is a RubyLLM::Tool subclass with three parts:
+    #   1. description — tells the LLM what the tool does (sent as part of the prompt)
+    #   2. param declarations — defines the JSON schema for arguments
+    #   3. execute method — the Ruby code that runs when the LLM calls the tool
+    #
+    # RubyLLM automatically converts the params into JSON Schema, sends them to
+    # the LLM provider, parses the tool call from the response, and calls execute
+    # with keyword arguments. All you write is the Ruby method.
     class BashExec < RubyLLM::Tool
       description "Execute a bash command and return stdout, stderr, and exit code. Use for running tests, installing dependencies, checking git status, etc."
 

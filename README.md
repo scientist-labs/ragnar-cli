@@ -1,6 +1,6 @@
 <img src="/docs/assets/ragnar-wide.png" alt="ragnar" height="80px">
 
-An agentic coding assistant for Ruby — built with Ruby, for Ruby developers to learn from.
+A hackable, agentic coding assistant built in Ruby — designed to be read, understood, and extended.
 
 <p align="center">
   <img src="/docs/assets/screenshot.png" alt="ragnar TUI" width="600">
@@ -10,7 +10,7 @@ An agentic coding assistant for Ruby — built with Ruby, for Ruby developers to
 
 Ragnar is a hackable, Claude Code-style coding agent written entirely in Ruby. It can read your files, write code, run commands, search your codebase, and self-correct when tests fail — all driven by an LLM through a two-level agentic loop.
 
-**This is not a production competitor to Claude Code.** It's a teaching tool. The goal is to let a Ruby developer read ~1,400 lines of code and understand exactly how an agentic coding assistant works:
+**This is not a production competitor to Claude Code.** It's a reference implementation you can hack on. The entire agent is ~1,400 lines of Ruby — read it, modify it, and see exactly how a coding agent works:
 
 - **Tools are just Ruby classes** — inherit from `RubyLLM::Tool`, implement `execute`
 - **Level 1 is free** — `chat.ask()` handles the tool call → execute → feed back loop automatically

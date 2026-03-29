@@ -1,10 +1,18 @@
 # frozen_string_literal: true
 
 module Ragnar
-  # Agent wraps a persistent RubyLLM chat with tools and conversation state.
-  # This is the Level 1 component — it handles a single LLM turn where the
-  # model can make multiple tool calls. The Orchestrator (Level 2) manages
-  # multiple Agent turns to complete a task.
+  # The Agent wraps a persistent RubyLLM chat with tools and conversation state.
+  #
+  # This is the Level 1 component. When you call agent.step("fix the bug"),
+  # RubyLLM sends the message to the LLM along with descriptions of all
+  # registered tools. The LLM may respond with tool calls (read_file, edit_file,
+  # bash_exec) which RubyLLM executes automatically and feeds back — all within
+  # a single call to chat.ask(). This inner loop is free; RubyLLM handles it.
+  #
+  # The Agent maintains conversation history across steps, so the Orchestrator
+  # (Level 2) can call step() multiple times and the LLM remembers what it did.
+  # Each tool call is logged for the Orchestrator to inspect (e.g., to detect
+  # file modifications or completion signals).
   class Agent
     attr_reader :chat, :files_modified, :tool_calls_log
 

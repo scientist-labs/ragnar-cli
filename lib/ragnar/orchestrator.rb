@@ -1,19 +1,24 @@
 # frozen_string_literal: true
 
 module Ragnar
-  # Orchestrator is the Level 2 loop — the "brain outside the brain."
+  # The Orchestrator is the Level 2 loop — the "brain outside the brain."
   #
-  # While the Agent handles a single LLM turn (with tool calls), the Orchestrator
-  # manages multiple turns to complete a task:
+  # A coding agent has two levels of looping:
   #
-  #   1. Give the Agent a task
-  #   2. After each turn, check: did files change? Run validation.
-  #   3. If validation fails, feed the failure back and let the Agent try again
-  #   4. If the Agent says it's done, verify and return
-  #   5. If too many iterations, ask the user
+  #   Level 1 (Agent/RubyLLM): Within a single LLM turn, the model makes tool
+  #   calls (read file, write file, run bash). RubyLLM executes each tool and
+  #   feeds the result back automatically. This is reactive — the LLM drives it.
   #
-  # The key insight: the Orchestrator runs tests/validation BETWEEN LLM turns.
-  # The LLM doesn't ask to run tests — the Orchestrator does it automatically.
+  #   Level 2 (this class): Between LLM turns, the Orchestrator makes decisions
+  #   that the LLM doesn't make for itself:
+  #     - Did files change? Run tests automatically (the LLM didn't ask for this)
+  #     - Tests failed? Feed the failure back and let the LLM try again
+  #     - LLM called TaskComplete? Verify with validation before accepting
+  #     - Too many iterations? Ask the user whether to continue
+  #
+  # This is what separates a "chatbot with tools" from a "coding assistant."
+  # The Orchestrator adds judgment between turns — running tests, catching
+  # failures, enforcing iteration limits — that the LLM can't do for itself.
   class Orchestrator
     attr_reader :agent, :iteration, :max_iterations, :working_dir
 
