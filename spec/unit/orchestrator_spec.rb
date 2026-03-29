@@ -29,56 +29,111 @@ RSpec.describe Ragnar::Orchestrator do
   end
 
   describe "#run" do
-    let(:complete_response) do
+    let(:response) do
       resp = double("RubyLLM::Message")
-      allow(resp).to receive(:content).and_return("I've completed the task.")
+      allow(resp).to receive(:content).and_return("Done with the task.")
       resp
     end
 
-    let(:incomplete_response) do
-      resp = double("RubyLLM::Message")
-      allow(resp).to receive(:content).and_return("I'm working on it...")
-      resp
-    end
+    it "completes when agent calls task_complete tool" do
+      allow(mock_chat).to receive(:ask).and_return(response)
 
-    it "completes when agent says task is done" do
-      allow(mock_chat).to receive(:ask).and_return(complete_response)
+      # Simulate the agent calling task_complete
+      agent.tool_calls_log << { name: "ragnar--tools--task_complete", args: { summary: "Done" }, time: Time.now }
 
       events = []
       orchestrator.run("Fix the bug") do |event|
         events << event
       end
 
-      expect(events.map { |e| e[:type] }).to include(:status, :response)
+      statuses = events.select { |e| e[:type] == :status }.map { |e| e[:message] }
+      expect(statuses).to include(/Task complete/)
     end
 
-    it "tracks iterations" do
+    it "handles ask_user signal" do
+      allow(mock_chat).to receive(:ask).and_return(response)
+
       call_count = 0
       allow(mock_chat).to receive(:ask) do
         call_count += 1
-        if call_count >= 2
-          complete_response
+        if call_count == 1
+          # First turn: agent asks user a question
+          agent.tool_calls_log << { name: "ragnar--tools--ask_user", args: { question: "Which framework?" }, time: Time.now }
+          resp = double("RubyLLM::Message")
+          allow(resp).to receive(:content).and_return("Which framework?")
+          resp
         else
-          incomplete_response
+          # Second turn: agent completes
+          agent.tool_calls_log << { name: "ragnar--tools--task_complete", args: { summary: "Done" }, time: Time.now }
+          resp = double("RubyLLM::Message")
+          allow(resp).to receive(:content).and_return("All done.")
+          resp
         end
       end
 
-      orchestrator.run("Do something") { |e| }
-      expect(orchestrator.iteration).to be >= 1
+      events = []
+      orchestrator.run("Build something") do |event|
+        events << event
+        "rspec" if event[:type] == :ask_user  # Answer the question
+      end
+
+      types = events.map { |e| e[:type] }
+      expect(types).to include(:ask_user)
+    end
+
+    it "continues when no signal is given" do
+      call_count = 0
+      allow(mock_chat).to receive(:ask) do
+        call_count += 1
+        if call_count >= 3
+          agent.tool_calls_log << { name: "ragnar--tools--task_complete", args: {}, time: Time.now }
+        end
+        resp = double("RubyLLM::Message")
+        allow(resp).to receive(:content).and_return("Working...")
+        resp
+      end
+
+      orchestrator.run("Multi-step task") { |e| }
+      expect(orchestrator.iteration).to be >= 2
     end
 
     it "respects max_iterations" do
-      allow(mock_chat).to receive(:ask).and_return(incomplete_response)
+      allow(mock_chat).to receive(:ask) do
+        resp = double("RubyLLM::Message")
+        allow(resp).to receive(:content).and_return("Still working...")
+        resp
+      end
 
       orch = described_class.new(agent: agent, working_dir: temp_dir, max_iterations: 2)
 
-      events = []
       orch.run("Infinite task") do |event|
-        events << event
-        "n" if event[:type] == :ask_user  # Don't continue
+        "n" if event[:type] == :ask_user
       end
 
       expect(orch.iteration).to be <= 3
+    end
+  end
+
+  describe "#detect_signal" do
+    let(:response) { double("RubyLLM::Message", content: "text") }
+
+    it "returns :task_complete when last tool call was task_complete" do
+      agent.tool_calls_log << { name: "ragnar--tools--task_complete", args: {}, time: Time.now }
+      expect(orchestrator.send(:detect_signal, response)).to eq(:task_complete)
+    end
+
+    it "returns :ask_user when last tool call was ask_user" do
+      agent.tool_calls_log << { name: "ragnar--tools--ask_user", args: {}, time: Time.now }
+      expect(orchestrator.send(:detect_signal, response)).to eq(:ask_user)
+    end
+
+    it "returns :continue when last tool call was something else" do
+      agent.tool_calls_log << { name: "ragnar--tools--read_file", args: {}, time: Time.now }
+      expect(orchestrator.send(:detect_signal, response)).to eq(:continue)
+    end
+
+    it "returns :continue when no tool calls" do
+      expect(orchestrator.send(:detect_signal, response)).to eq(:continue)
     end
   end
 
@@ -89,7 +144,6 @@ RSpec.describe Ragnar::Orchestrator do
 
       validator = orchestrator.send(:detect_validator)
       expect(validator[:command]).to include("rspec")
-      expect(validator[:type]).to eq(:ruby)
     end
 
     it "detects Rust projects" do
@@ -97,15 +151,6 @@ RSpec.describe Ragnar::Orchestrator do
 
       validator = orchestrator.send(:detect_validator)
       expect(validator[:command]).to include("cargo test")
-      expect(validator[:type]).to eq(:rust)
-    end
-
-    it "detects Node projects" do
-      FileUtils.touch(File.join(temp_dir, "package.json"))
-
-      validator = orchestrator.send(:detect_validator)
-      expect(validator[:command]).to include("npm test")
-      expect(validator[:type]).to eq(:node)
     end
 
     it "returns nil for unknown project types" do

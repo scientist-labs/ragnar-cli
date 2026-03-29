@@ -17,10 +17,13 @@ module Ragnar
       1. Start by understanding the codebase — read relevant files, list directories
       2. Make changes incrementally — edit or write files as needed
       3. Verify your changes — run tests or check the output
-      4. Report what you did and what the user should know
+      4. When finished, call the task_complete tool with a summary
 
-      Be concise and direct. Prefer editing existing files over creating new ones.
-      When you're done with the task, say so clearly.
+      IMPORTANT:
+      - When you have completed the task, you MUST call the task_complete tool. Do not
+        just say you're done in text — use the tool.
+      - If you need clarification from the user, call the ask_user tool.
+      - Be concise and direct. Prefer editing existing files over creating new ones.
     PROMPT
 
     def initialize(profile: nil)

@@ -44,47 +44,52 @@ module Ragnar
 
       # First turn: give the agent the task
       response = @agent.ask(task)
-      emit(callback, type: :response, content: response.content)
 
       loop do
         @iteration += 1
+        signal = detect_signal(response)
 
-        if @iteration > @max_iterations
-          answer = emit(callback,
-            type: :ask_user,
-            message: "Reached #{@max_iterations} iterations. Continue? (y/n)")
-          break unless answer&.strip&.downcase == "y"
-          @max_iterations += 10
-        end
-
-        # Check if the agent made file changes
-        if @agent.files_modified.any?
-          emit(callback, type: :status,
-            message: "Files modified: #{@agent.files_modified.join(', ')}")
-
-          # Run validation
-          validation = run_validation(callback)
-          if validation && !validation[:passed]
-            emit(callback, type: :status,
-              message: "Validation failed, asking agent to fix...")
-            @agent.add_context(
-              "Validation failed after your changes:\n\n#{validation[:output]}\n\nPlease fix the issues."
-            )
-            response = @agent.next_step
-            emit(callback, type: :response, content: response.content)
-            next
-          end
-        end
-
-        # Check if the response indicates completion
-        if task_complete?(response)
+        case signal
+        when :task_complete
+          emit(callback, type: :response, content: response.content)
           emit(callback, type: :status, message: "Task complete (iteration #{@iteration})")
-          break
-        end
 
-        # Not done — let the agent continue
-        response = @agent.next_step
-        emit(callback, type: :response, content: response.content)
+          # If files were modified, run validation before accepting
+          if @agent.files_modified.any?
+            validation = run_validation(callback)
+            if validation && !validation[:passed]
+              emit(callback, type: :status, message: "Validation failed, asking agent to fix...")
+              @agent.add_context(
+                "You called task_complete but validation failed:\n\n#{validation[:output]}\n\nPlease fix the issues and call task_complete again when done."
+              )
+              response = @agent.next_step
+              next
+            end
+          end
+          break
+
+        when :ask_user
+          user_response = emit(callback, type: :ask_user, message: response.content)
+          @agent.add_context("User response: #{user_response}")
+          response = @agent.next_step
+          next
+
+        else
+          # Normal response — the agent is still working
+          emit(callback, type: :response, content: response.content) if response.content && !response.content.empty?
+
+          # Check iteration limit
+          if @iteration > @max_iterations
+            answer = emit(callback,
+              type: :ask_user,
+              message: "Reached #{@max_iterations} iterations. Continue? (y/n)")
+            break unless answer&.strip&.downcase == "y"
+            @max_iterations += 10
+          end
+
+          # Agent didn't signal — let it continue
+          response = @agent.next_step
+        end
       end
 
       response
@@ -97,21 +102,22 @@ module Ragnar
       callback.call(event)
     end
 
-    def task_complete?(response)
-      return false unless response&.content
+    # Detect tool-based signals from the agent.
+    # When the agent calls TaskComplete or AskUser, RubyLLM's halt mechanism
+    # stops the tool loop and returns the tool's message as the response content.
+    # We detect which tool was called by checking the agent's tool call log.
+    def detect_signal(response)
+      last_call = @agent.tool_calls_log.last
+      return :continue unless last_call
 
-      content = response.content.downcase
-      # Heuristic: the agent says it's done
-      completion_phrases = [
-        "task is complete",
-        "i've completed",
-        "i have completed",
-        "changes are done",
-        "all done",
-        "finished implementing",
-        "implementation is complete"
-      ]
-      completion_phrases.any? { |phrase| content.include?(phrase) }
+      case last_call[:name]
+      when /task_complete/
+        :task_complete
+      when /ask_user/
+        :ask_user
+      else
+        :continue
+      end
     end
 
     def run_validation(callback)
