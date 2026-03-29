@@ -10,7 +10,12 @@ module Ragnar
     include CLIVisualization
     include Thor::Interactive::Command
 
-    default_command :interactive
+    def self.exit_on_failure?
+      true
+    end
+
+    # Note: default to interactive mode is handled in exe/ragnar
+    # to avoid Thor's default_command conflicting with global options
 
     class_option :profile, type: :string, aliases: "-p", desc: "LLM profile to use (e.g., red_candle, opus, sonnet)"
 

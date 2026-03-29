@@ -3,4 +3,25 @@
 
 require "ragnar"
 
-Ragnar::CLI.start(ARGV)
+args = ARGV.dup
+known_commands = Ragnar::CLI.all_commands.keys + Ragnar::CLI.subcommands
+
+# Find the first non-flag argument that matches a known command
+command_idx = args.index { |arg| !arg.start_with?("-") && known_commands.include?(arg) }
+
+if command_idx && command_idx > 0
+  # Command found but not first — reorder so command comes first
+  # e.g., ["--profile", "opus", "code", "task"] -> ["code", "--profile", "opus", "task"]
+  command = args.delete_at(command_idx)
+  args.unshift(command)
+  Ragnar::CLI.start(args)
+elsif command_idx
+  # Command is already first — normal
+  Ragnar::CLI.start(args)
+elsif args.empty? || args.all? { |a| a.start_with?("-") }
+  # No command — launch interactive
+  Ragnar::CLI.start(["interactive"] + args)
+else
+  # Unknown first arg — treat as interactive
+  Ragnar::CLI.start(["interactive"] + args)
+end
