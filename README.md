@@ -175,7 +175,28 @@ The TUI provides:
 - **`/verbose`** — toggle verbose mode to see query pipeline details (retrieval, reranking, context)
 - **`/profile`** — list or switch LLM profiles mid-session
 
-### 3. Train UMAP (Optional)
+### 3. Agentic Coding Mode
+
+Use `/code` to give ragnar a coding task. It reads files, writes code, runs commands, and validates its work — like a Claude Code-style assistant:
+
+```bash
+# From the CLI
+ragnar --profile opus code "Write a Ruby script that fetches the weather for San Francisco"
+
+# In the TUI
+ragnar> /profile opus
+ragnar> /code Write a FizzBuzz implementation in Ruby with tests
+```
+
+The agent loop has two levels:
+- **Level 1 (RubyLLM)**: The LLM makes tool calls (read file, write file, run bash) within a single turn
+- **Level 2 (Orchestrator)**: Between turns, ragnar auto-detects the project type, runs tests, and feeds failures back to the LLM to self-correct
+
+Available tools: `ReadFile`, `WriteFile`, `EditFile`, `BashExec`, `ListFiles`, `Grep`
+
+The orchestrator auto-detects and runs validation for Ruby (rspec), Rust (cargo test), Node (npm test), and Python (pytest) projects.
+
+### 4. Train UMAP (Optional)
 
 Reduce embedding dimensions for faster search:
 
@@ -189,7 +210,7 @@ ragnar umap train \
 ragnar umap apply
 ```
 
-### 4. Extract Topics
+### 5. Extract Topics
 
 Perform topic modeling to discover themes in your indexed documents:
 
@@ -218,7 +239,7 @@ The HTML export includes:
 - **Topic Bubbles**: Interactive bubble chart showing topic sizes and coherence
 - **Embedding Scatter Plot**: Visualization of all documents in embedding space, colored by cluster
 
-### 5. Query the System
+### 6. Query the System
 
 ```bash
 # Basic query
@@ -250,7 +271,7 @@ When using `--verbose` or `-v`, you'll see:
 6. **Response Generation**: The final LLM prompt and response
 7. **Final Results**: Confidence score and source attribution
 
-### 6. Check Statistics
+### 7. Check Statistics
 
 ```bash
 ragnar stats
