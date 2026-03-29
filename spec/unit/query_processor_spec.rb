@@ -113,6 +113,92 @@ RSpec.describe Ragnar::QueryProcessor do
     end
   end
   
+  describe "#query with enable_reranking" do
+    it "skips reranking when enable_reranking is false" do
+      expect_any_instance_of(described_class).not_to receive(:rerank_documents)
+
+      result = processor.query("test", top_k: 2, enable_reranking: false)
+      expect(result[:answer]).to be_a(String)
+    end
+
+    it "uses retrieval order when reranking is disabled" do
+      result = processor.query("test", top_k: 2, enable_reranking: false)
+      # Sources should come from retrieval order (closest distance first)
+      expect(result[:sources]).to be_an(Array)
+    end
+  end
+
+  describe "#query with reranking enabled" do
+    it "uses the configured reranker model" do
+      allow(Ragnar::Config.instance).to receive(:reranker_model).and_return("custom/reranker")
+      mock_reranker = double("Reranker")
+      allow(mock_reranker).to receive(:rerank).and_return([
+        { doc_id: 0, score: 1.0, text: "result" }
+      ])
+      allow(Candle::Reranker).to receive(:from_pretrained)
+        .with("custom/reranker").and_return(mock_reranker)
+
+      result = processor.query("test", top_k: 2, enable_reranking: true)
+      expect(Candle::Reranker).to have_received(:from_pretrained).with("custom/reranker")
+    end
+
+    it "falls back to retrieval order when reranker fails to load" do
+      allow(Candle::Reranker).to receive(:from_pretrained)
+        .and_raise("Failed to load model: unsupported architecture")
+
+      result = processor.query("test", top_k: 2, enable_reranking: true)
+      expect(result[:answer]).to be_a(String)
+      expect(result[:sources]).to be_an(Array)
+    end
+  end
+
+  describe "#query always includes original query in sub-queries" do
+    it "prepends original query to sub-queries" do
+      result = processor.query("my specific question", top_k: 2)
+      expect(result[:sub_queries]).to include("my specific question")
+      expect(result[:sub_queries].first).to eq("my specific question")
+    end
+  end
+
+  describe "strip_think_tags" do
+    let(:strip) { processor.send(:strip_think_tags, text) }
+
+    context "with think tags" do
+      let(:text) { "<think>Some internal reasoning</think>The actual answer" }
+      it "strips think blocks" do
+        expect(strip).to eq("The actual answer")
+      end
+    end
+
+    context "with multiline think tags" do
+      let(:text) { "<think>\nLine 1\nLine 2\n</think>\n\nThe answer" }
+      it "strips multiline think blocks" do
+        expect(strip).to eq("The answer")
+      end
+    end
+
+    context "with no think tags" do
+      let(:text) { "Just a normal response" }
+      it "returns text unchanged" do
+        expect(strip).to eq("Just a normal response")
+      end
+    end
+
+    context "with nil" do
+      let(:text) { nil }
+      it "returns nil" do
+        expect(strip).to be_nil
+      end
+    end
+
+    context "with unclosed think tag" do
+      let(:text) { "<think>reasoning without closing" }
+      it "returns text unchanged" do
+        expect(strip).to eq("<think>reasoning without closing")
+      end
+    end
+  end
+
   describe "error handling" do
     it "handles embedding errors" do
       allow_any_instance_of(Ragnar::Embedder).to receive(:embed_text).and_raise("Embedding error")

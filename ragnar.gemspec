@@ -30,7 +30,9 @@ Gem::Specification.new do |spec|
 
   # Runtime dependencies
   spec.add_dependency "thor", "~> 1.3"
-  spec.add_dependency "red-candle", ">= 1.2.3"
+  spec.add_dependency "red-candle", ">= 1.2.3"  # embeddings and reranking
+  spec.add_dependency "ruby_llm", ">= 1.14"
+  spec.add_dependency "ruby_llm-red_candle", ">= 0.1"
   spec.add_dependency "lancelot", "~> 0.3", ">= 0.3.3"
   spec.add_dependency "topical", ">= 0.1.2"
 

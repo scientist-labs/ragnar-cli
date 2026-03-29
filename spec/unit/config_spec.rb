@@ -288,6 +288,171 @@ RSpec.describe Ragnar::Config do
     end
   end
   
+  describe 'LLM profiles' do
+    context 'with profiles configured' do
+      before do
+        File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+          llm:
+            default_profile: local
+            profiles:
+              local:
+                provider: red_candle
+                model: MaziyarPanahi/Qwen3-4B-GGUF
+              opus:
+                provider: anthropic
+                model: claude-opus-4-6
+              sonnet:
+                provider: anthropic
+                model: claude-sonnet-4-6
+                api_key: sk-test-key
+        YAML
+      end
+
+      it 'returns available profiles' do
+        config = fresh_config
+        expect(config.available_profiles).to contain_exactly('local', 'opus', 'sonnet')
+      end
+
+      it 'uses default_profile as active' do
+        config = fresh_config
+        expect(config.llm_profile_name).to eq('local')
+        expect(config.llm_provider).to eq('red_candle')
+        expect(config.llm_model).to eq('MaziyarPanahi/Qwen3-4B-GGUF')
+      end
+
+      it 'switches profile with set_active_profile' do
+        config = fresh_config
+        config.set_active_profile('opus')
+        expect(config.llm_profile_name).to eq('opus')
+        expect(config.llm_provider).to eq('anthropic')
+        expect(config.llm_model).to eq('claude-opus-4-6')
+      end
+
+      it 'reads api_key from profile' do
+        config = fresh_config
+        config.set_active_profile('sonnet')
+        expect(config.llm_api_key).to eq('sk-test-key')
+      end
+
+      it 'raises on unknown profile' do
+        config = fresh_config
+        expect { config.set_active_profile('nonexistent') }.to raise_error(ArgumentError, /Unknown profile/)
+      end
+
+      it 'includes available profiles in error message' do
+        config = fresh_config
+        expect { config.set_active_profile('bad') }.to raise_error(ArgumentError, /local, opus, sonnet/)
+      end
+    end
+
+    context 'without profiles (backwards compat)' do
+      before do
+        File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+          llm:
+            provider: red_candle
+            default_model: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF
+        YAML
+      end
+
+      it 'synthesizes a default profile from flat keys' do
+        config = fresh_config
+        expect(config.available_profiles).to eq(['default'])
+        expect(config.llm_provider).to eq('red_candle')
+        expect(config.llm_model).to eq('TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF')
+      end
+    end
+
+    context 'with no config file' do
+      it 'uses built-in defaults' do
+        config = fresh_config
+        expect(config.llm_provider).to eq('red_candle')
+        expect(config.llm_model).to eq('MaziyarPanahi/Qwen3-4B-GGUF')
+      end
+    end
+  end
+
+  describe '#create_chat' do
+    before do
+      File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+        llm:
+          default_profile: local
+          profiles:
+            local:
+              provider: red_candle
+              model: test/model
+            cloud:
+              provider: anthropic
+              model: claude-opus-4-6
+              api_key: sk-test
+      YAML
+    end
+
+    it 'creates a RubyLLM chat with active profile settings' do
+      config = fresh_config
+      mock_chat = double("RubyLLM::Chat")
+      allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+
+      result = config.create_chat
+      expect(RubyLLM).to have_received(:chat).with(provider: :red_candle, model: 'test/model')
+      expect(result).to eq(mock_chat)
+    end
+
+    it 'configures API key for anthropic provider' do
+      config = fresh_config
+      config.set_active_profile('cloud')
+      mock_chat = double("RubyLLM::Chat")
+      allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+      allow(RubyLLM).to receive(:configure).and_yield(double(anthropic_api_key: nil).as_null_object)
+
+      config.create_chat
+      expect(RubyLLM).to have_received(:configure)
+    end
+
+    it 'does not configure API key when none is set' do
+      config = fresh_config
+      mock_chat = double("RubyLLM::Chat")
+      allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+      allow(RubyLLM).to receive(:configure)
+
+      config.create_chat
+      expect(RubyLLM).not_to have_received(:configure)
+    end
+  end
+
+  describe 'reranking config' do
+    context 'with reranking settings' do
+      before do
+        File.write(File.join(temp_dir, '.ragnar.yml'), <<~YAML)
+          query:
+            enable_reranking: false
+            reranker_model: custom/reranker
+        YAML
+      end
+
+      it 'reads enable_reranking setting' do
+        config = fresh_config
+        expect(config.enable_reranking?).to be false
+      end
+
+      it 'reads reranker_model setting' do
+        config = fresh_config
+        expect(config.reranker_model).to eq('custom/reranker')
+      end
+    end
+
+    context 'with defaults' do
+      it 'defaults reranking to true' do
+        config = fresh_config
+        expect(config.enable_reranking?).to be true
+      end
+
+      it 'defaults reranker model to bge-reranker-base' do
+        config = fresh_config
+        expect(config.reranker_model).to eq('BAAI/bge-reranker-base')
+      end
+    end
+  end
+
   describe 'XDG Base Directory support' do
     it 'respects XDG_CACHE_HOME environment variable' do
       xdg_cache = File.join(temp_dir, 'xdg_cache')

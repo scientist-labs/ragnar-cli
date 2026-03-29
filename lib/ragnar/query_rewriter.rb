@@ -3,11 +3,11 @@ module Ragnar
     def initialize(llm_manager: nil)
       @llm_manager = llm_manager || LLMManager.instance
     end
-    
+
     def rewrite(query)
-      # Get the cached LLM
-      model = @llm_manager.default_llm
-      
+      # Create a fresh chat for each rewrite to avoid conversation history bleed
+      chat = Config.instance.create_chat
+
       # Define the JSON schema for structured output
       schema = {
         type: "object",
@@ -41,25 +41,28 @@ module Ragnar
         },
         required: ["clarified_intent", "query_type", "sub_queries", "key_terms", "context_needed"]
       }
-      
+
       prompt = <<~PROMPT
         Analyze the following user query and break it down for retrieval-augmented generation.
         Focus on understanding the user's intent and creating effective sub-queries for searching.
-        
+
         User Query: #{query}
-        
-        Provide a structured analysis that will help retrieve the most relevant documents.
+
+        Provide a structured analysis that will help retrieve the most relevant documents. /no_think
       PROMPT
-      
+
       begin
-        # Use structured generation with schema
-        result = model.generate_structured(
-          prompt,
-          schema: schema
-        )
-        
-        # The result should already be a JSON string
-        JSON.parse(result)
+        response = chat.with_schema(schema).ask(prompt)
+        result = response.content
+
+        # RubyLLM with_schema returns parsed content; handle both String and Hash
+        if result.is_a?(String)
+          JSON.parse(result)
+        elsif result.is_a?(Hash)
+          result.transform_keys(&:to_s)
+        else
+          result
+        end
       rescue => e
         # Fallback to simple rewriting if structured generation fails
         {

@@ -57,12 +57,74 @@ module Ragnar
       get('embeddings.chunk_overlap', Ragnar::DEFAULT_CHUNK_OVERLAP)
     end
     
-    def llm_model
-      get('llm.default_model', "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF")
+    # LLM Profile support
+    # Profiles allow switching between LLM providers/models via --profile flag
+    # Backwards compatible: flat llm.provider/llm.default_model still work if no profiles defined
+
+    def set_active_profile(name)
+      name = name.to_s
+      profiles = llm_profiles
+      unless profiles.key?(name)
+        available = profiles.keys.join(', ')
+        raise ArgumentError, "Unknown profile '#{name}'. Available profiles: #{available}"
+      end
+      @active_profile = name
     end
-    
+
+    def llm_profile_name
+      @active_profile || get('llm.default_profile', nil) || llm_profiles.keys.first || 'default'
+    end
+
+    def llm_profiles
+      configured = get('llm.profiles', nil)
+      if configured.is_a?(Hash) && !configured.empty?
+        configured
+      else
+        # Backwards compat: synthesize a profile from flat keys
+        {
+          'default' => {
+            'provider' => get('llm.provider', 'red_candle'),
+            'model' => get('llm.default_model', 'MaziyarPanahi/Qwen3-4B-GGUF')
+          }
+        }
+      end
+    end
+
+    def llm_profile
+      llm_profiles[llm_profile_name] || llm_profiles.values.first
+    end
+
+    def available_profiles
+      llm_profiles.keys
+    end
+
+    # Create a new RubyLLM chat instance with the active profile's settings
+    def create_chat
+      api_key = llm_api_key
+      provider = llm_provider.to_sym
+
+      # Configure RubyLLM with the API key if present
+      if api_key
+        configure_provider_api_key(provider, api_key)
+      end
+
+      RubyLLM.chat(provider: provider, model: llm_model)
+    end
+
+    def llm_provider
+      llm_profile&.dig('provider') || get('llm.provider', 'red_candle')
+    end
+
+    def llm_model
+      llm_profile&.dig('model') || get('llm.default_model', 'MaziyarPanahi/Qwen3-4B-GGUF')
+    end
+
     def llm_gguf_file
-      get('llm.default_gguf_file', "tinyllama-1.1b-chat-v1.0.q4_k_m.gguf")
+      get('llm.default_gguf_file', "Qwen3-4B.Q4_K_M.gguf")
+    end
+
+    def llm_api_key
+      llm_profile&.dig('api_key') || get('llm.api_key', nil)
     end
     
     def interactive_prompt
@@ -83,6 +145,14 @@ module Ragnar
     
     def enable_query_rewriting?
       get('query.enable_query_rewriting', true)
+    end
+
+    def enable_reranking?
+      get('query.enable_reranking', true)
+    end
+
+    def reranker_model
+      get('query.reranker_model', 'BAAI/bge-reranker-base')
     end
     
     # Config file management
@@ -121,12 +191,27 @@ module Ragnar
           'model_filename' => 'umap_model.bin'
         },
         'llm' => {
-          'default_model' => 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF',
-          'default_gguf_file' => 'tinyllama-1.1b-chat-v1.0.q4_k_m.gguf'
+          'default_profile' => 'red_candle',
+          'profiles' => {
+            'red_candle' => {
+              'provider' => 'red_candle',
+              'model' => 'MaziyarPanahi/Qwen3-4B-GGUF'
+            },
+            'opus' => {
+              'provider' => 'anthropic',
+              'model' => 'claude-opus-4-6'
+            },
+            'sonnet' => {
+              'provider' => 'anthropic',
+              'model' => 'claude-sonnet-4-6'
+            }
+          }
         },
         'query' => {
           'top_k' => 3,
-          'enable_query_rewriting' => true
+          'enable_query_rewriting' => true,
+          'enable_reranking' => true,
+          'reranker_model' => 'BAAI/bge-reranker-base'
         },
         'interactive' => {
           'prompt' => 'ragnar> ',
@@ -146,7 +231,16 @@ module Ragnar
     end
     
     private
-    
+
+    def configure_provider_api_key(provider, api_key)
+      case provider
+      when :anthropic
+        RubyLLM.configure { |c| c.anthropic_api_key = api_key }
+      when :openai
+        RubyLLM.configure { |c| c.openai_api_key = api_key }
+      end
+    end
+
     def load_config
       @config_file_path = find_config_file
       

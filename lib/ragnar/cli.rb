@@ -12,6 +12,8 @@ module Ragnar
 
     default_command :interactive
 
+    class_option :profile, type: :string, aliases: "-p", desc: "LLM profile to use (e.g., red_candle, opus, sonnet)"
+
     # Configure interactive mode
     configure_interactive(
       prompt: Config.instance.interactive_prompt,
@@ -41,6 +43,7 @@ module Ragnar
     class_variable_set(:@@cached_llm_manager, nil)
     class_variable_set(:@@cached_query_processor, nil)
     class_variable_set(:@@cached_db_path, nil)
+    class_variable_set(:@@verbose_mode, false)
 
     desc "index PATH", "Index text files from PATH (file or directory)"
     option :db_path, type: :string, desc: "Path to Lance database (default from config)"
@@ -101,9 +104,10 @@ module Ragnar
     option :export, type: :string, desc: "Export topics to file (json or html)"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing"
     option :summarize, type: :boolean, default: false, aliases: "-s", desc: "Generate human-readable topic summaries using LLM"
-    option :llm_model, type: :string, default: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", desc: "LLM model for summarization"
-    option :gguf_file, type: :string, default: "tinyllama-1.1b-chat-v1.0.q4_k_m.gguf", desc: "GGUF file name for LLM model"
+    option :llm_model, type: :string, default: "MaziyarPanahi/Qwen3-4B-GGUF", desc: "LLM model for summarization"
+    option :gguf_file, type: :string, default: "Qwen3-4B.Q4_K_M.gguf", desc: "GGUF file name for LLM model"
     def topics
+      apply_profile!
       require_relative 'topic_modeling'
 
       say "Extracting topics from indexed documents...", :green
@@ -170,16 +174,12 @@ module Ragnar
         if options[:summarize] && topics.any?
           say "Generating topic summaries with LLM...", :yellow
           begin
-            require 'red-candle'
-
-            # Initialize LLM for summarization once
-            say "Loading model: #{options[:llm_model]}", :cyan if options[:verbose]
-            llm = Candle::LLM.from_pretrained(options[:llm_model], gguf_file: options[:gguf_file])
+            chat = LLMManager.instance.default_chat
 
             # Add summaries to topics
             topics.each_with_index do |topic, i|
               say "  Summarizing topic #{i+1}/#{topics.length}...", :yellow if options[:verbose]
-              topic.instance_variable_set(:@summary, summarize_topic(topic, llm))
+              topic.instance_variable_set(:@summary, summarize_topic(topic, chat))
             end
 
             say "Topic summaries generated!", :green
@@ -245,8 +245,10 @@ module Ragnar
     option :db_path, type: :string, desc: "Path to Lance database (default from config)"
     option :top_k, type: :numeric, default: 3, desc: "Number of top documents to use"
     option :verbose, type: :boolean, default: false, aliases: "-v", desc: "Show detailed processing steps"
+    option :rerank, type: :boolean, default: nil, desc: "Enable cross-encoder reranking (default from config)"
     option :json, type: :boolean, default: false, desc: "Output as JSON"
     def query(question)
+      apply_profile!
       puts "Debug - Query called with: #{question.inspect}" if ENV['DEBUG']
       puts "Debug - Options: #{options.inspect}" if ENV['DEBUG']
 
@@ -256,10 +258,11 @@ module Ragnar
       begin
         config = Config.instance
         result = processor.query(
-          question, 
-          top_k: options[:top_k] || config.query_top_k, 
-          verbose: options[:verbose] || false,
-          enable_rewriting: config.enable_query_rewriting?
+          question,
+          top_k: options[:top_k] || config.query_top_k,
+          verbose: options[:verbose] || @@verbose_mode,
+          enable_rewriting: config.enable_query_rewriting?,
+          enable_reranking: options[:rerank].nil? ? config.enable_reranking? : options[:rerank]
         )
         puts "Debug - Result keys: #{result.keys}" if ENV['DEBUG']
 
@@ -372,8 +375,12 @@ module Ragnar
       say "  Chunk overlap: #{config.chunk_overlap}"
       
       say "\nLLM:", :cyan
+      say "  Active profile: #{config.llm_profile_name}", :green
+      say "  Provider: #{config.llm_provider}"
       say "  Model: #{config.llm_model}"
-      say "  GGUF file: #{config.llm_gguf_file}"
+      if config.available_profiles.size > 1
+        say "  Available profiles: #{config.available_profiles.join(', ')}"
+      end
       
       say "\nUMAP:", :cyan
       say "  Reduced dimensions: #{config.get('umap.reduced_dimensions', Ragnar::DEFAULT_REDUCED_DIMENSIONS)}"
@@ -383,28 +390,75 @@ module Ragnar
       say "\nQuery:", :cyan
       say "  Top K: #{config.query_top_k}"
       say "  Query rewriting: #{config.enable_query_rewriting?}"
+      say "  Reranking: #{config.enable_reranking?}"
+      say "  Reranker model: #{config.reranker_model}" if config.enable_reranking?
     end
     
     desc "model", "Show current LLM model information"
     def model
       config = Config.instance
-      
+
       say "\nLLM Model Configuration:", :cyan
       say "-" * 40
-      
-      say "\nModel:", :green
-      say "  Repository: #{config.llm_model}"
-      say "  GGUF file: #{config.llm_gguf_file}"
-      
-      # Check if model files exist
-      model_path = File.join(config.models_dir, config.llm_gguf_file)
-      if File.exist?(model_path)
-        size_mb = (File.size(model_path) / 1024.0 / 1024.0).round(2)
-        say "\nModel file exists: #{model_path} (#{size_mb} MB)", :green
+
+      say "\nProfile: #{config.llm_profile_name}", :green
+      say "  Provider: #{config.llm_provider}"
+      say "  Model: #{config.llm_model}"
+
+      # Only show GGUF/local file info for local providers
+      if config.llm_provider == 'red_candle'
+        say "\nEmbedding Model: #{config.embedding_model}"
+
+        # Check if model files exist in HuggingFace cache
+        hf_cache = File.expand_path("~/.cache/huggingface/hub")
+        model_dir = config.llm_model.gsub("/", "--")
+        model_cache = File.join(hf_cache, "models--#{model_dir}")
+        if Dir.exist?(model_cache)
+          say "\nModel cached: #{model_cache}", :green
+        else
+          say "\nModel not yet downloaded (will download on first use)", :yellow
+        end
       else
-        say "\nModel file not found: #{model_path}", :yellow
-        say "Run 'ragnar query' to download automatically", :yellow
+        api_key = config.llm_api_key
+        env_key = case config.llm_provider
+                  when 'anthropic' then ENV['ANTHROPIC_API_KEY']
+                  when 'openai' then ENV['OPENAI_API_KEY']
+                  end
+        has_key = api_key || env_key
+        say "\nAPI key: #{has_key ? 'configured' : 'not set'}", has_key ? :green : :red
       end
+    end
+
+    desc "profile [NAME]", "Show or switch LLM profile"
+    def profile(name = nil)
+      config = Config.instance
+
+      if name
+        begin
+          config.set_active_profile(name)
+          LLMManager.instance.clear_cache
+          say "Switched to profile: #{name}", :green
+          say "  Provider: #{config.llm_provider}"
+          say "  Model: #{config.llm_model}"
+        rescue ArgumentError => e
+          say e.message, :red
+        end
+      else
+        say "\nLLM Profiles:", :cyan
+        say "-" * 40
+        config.llm_profiles.each do |pname, pconfig|
+          active = pname == config.llm_profile_name ? " (active)" : ""
+          say "  #{pname}#{active}", active.empty? ? :white : :green
+          say "    Provider: #{pconfig['provider']}"
+          say "    Model: #{pconfig['model']}"
+        end
+      end
+    end
+
+    desc "verbose", "Toggle verbose mode on/off"
+    def verbose
+      @@verbose_mode = !@@verbose_mode
+      say "Verbose mode: #{@@verbose_mode ? 'on' : 'off'}", @@verbose_mode ? :green : :yellow
     end
 
     desc "clear-cache", "Clear cached instances (useful in interactive mode)"
@@ -594,6 +648,12 @@ module Ragnar
 
     private
 
+    def apply_profile!
+      return unless options[:profile]
+      Config.instance.set_active_profile(options[:profile])
+      LLMManager.instance.clear_cache
+    end
+
     # Cached instance helpers for interactive mode
     def get_cached_database(db_path = nil)
       # Use config default if no path provided
@@ -640,7 +700,7 @@ module Ragnar
     end
 
 
-    def summarize_topic(topic, llm)
+    def summarize_topic(topic, chat)
       # Get representative documents for context
       sample_docs = topic.representative_docs(k: 3)
 
@@ -657,7 +717,7 @@ module Ragnar
       PROMPT
 
       begin
-        summary = llm.generate(prompt).strip
+        summary = chat.ask(prompt).content.strip
         # Clean up common artifacts
         summary = summary.lines.first&.strip || "Related documents"
         summary = summary.gsub(/^(Summary:|Topic:|Documents:)/i, '').strip

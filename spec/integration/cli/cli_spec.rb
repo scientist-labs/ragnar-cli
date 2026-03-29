@@ -273,10 +273,11 @@ RSpec.describe Ragnar::CLI, type: :integration do
     
     context "with summarization enabled" do
       before do
-        # Mock LLM for summarization
-        mock_llm = double("LLM")
-        allow(mock_llm).to receive(:generate).and_return("These documents discuss machine learning techniques and algorithms.")
-        allow(Candle::LLM).to receive(:from_pretrained).and_return(mock_llm)
+        # Mock RubyLLM chat for summarization
+        mock_response = double("RubyLLM::Message", content: "These documents discuss machine learning techniques and algorithms.")
+        mock_chat = double("RubyLLM::Chat")
+        allow(mock_chat).to receive(:ask).and_return(mock_response)
+        allow_any_instance_of(Ragnar::LLMManager).to receive(:default_chat).and_return(mock_chat)
       end
       
       it "generates topic summaries" do
@@ -302,7 +303,7 @@ RSpec.describe Ragnar::CLI, type: :integration do
       
       context "when LLM loading fails" do
         before do
-          allow(Candle::LLM).to receive(:from_pretrained).and_raise("Model not found")
+          allow_any_instance_of(Ragnar::LLMManager).to receive(:default_chat).and_raise("Model not found")
         end
         
         it "handles LLM errors gracefully" do

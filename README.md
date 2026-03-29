@@ -2,6 +2,10 @@
 
 A complete Ruby implementation of Retrieval-Augmented Generation (RAG) pipeline using native Ruby ML/NLP gems.
 
+<p align="center">
+  <img src="/docs/assets/screenshot.png" alt="ragnar TUI" width="600">
+</p>
+
 ## Overview
 
 Ragnar provides a production-ready RAG pipeline for Ruby applications, integrating:
@@ -168,6 +172,8 @@ The TUI provides:
 - **Persistent history** across sessions
 - **Live output** — see indexing progress, query results, and topic analysis inline
 - **All CLI commands** available via `/command` syntax (e.g., `/index .`, `/umap train`, `/query "my question"`)
+- **`/verbose`** — toggle verbose mode to see query pipeline details (retrieval, reranking, context)
+- **`/profile`** — list or switch LLM profiles mid-session
 
 ### 3. Train UMAP (Optional)
 
@@ -308,80 +314,112 @@ Example `.ragnar.yml` file:
 ```yaml
 # Storage paths (all support ~ expansion)
 storage:
-  database_path: "~/.cache/ragnar/database"    # Vector database location
-  models_dir: "~/.cache/ragnar/models"         # Downloaded model files
-  history_file: "~/.cache/ragnar/history"      # Interactive mode history
+  database_path: "~/.cache/ragnar/database"
+  models_dir: "~/.cache/ragnar/models"
+  history_file: "~/.cache/ragnar/history"
 
 # Embedding configuration
 embeddings:
-  model: jinaai/jina-embeddings-v2-base-en    # Embedding model to use
-  chunk_size: 512                              # Tokens per chunk
-  chunk_overlap: 50                            # Token overlap between chunks
+  model: jinaai/jina-embeddings-v2-base-en
+  chunk_size: 512
+  chunk_overlap: 50
 
 # UMAP dimensionality reduction
 umap:
-  reduced_dimensions: 64                       # Target dimensions (2-100)
-  n_neighbors: 15                              # UMAP neighbors parameter
-  min_dist: 0.1                                # UMAP minimum distance
-  model_filename: umap_model.bin              # Saved model filename
+  reduced_dimensions: 64
+  n_neighbors: 15
+  min_dist: 0.1
+  model_filename: umap_model.bin
 
-# LLM configuration
+# LLM profiles — switch between local and cloud models
 llm:
-  default_model: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF
-  default_gguf_file: tinyllama-1.1b-chat-v1.0.q4_k_m.gguf
+  default_profile: red_candle
+  profiles:
+    red_candle:
+      provider: red_candle
+      model: MaziyarPanahi/Qwen3-4B-GGUF
+    opus:
+      provider: anthropic
+      model: claude-opus-4-6
+      api_key: sk-ant-...           # or set ANTHROPIC_API_KEY env var
+    sonnet:
+      provider: anthropic
+      model: claude-sonnet-4-6
+    ollama:
+      provider: ollama
+      model: llama3.1:8b
 
 # Query processing
 query:
-  top_k: 3                      # Number of documents to retrieve
-  enable_query_rewriting: true  # Use LLM to improve queries
+  top_k: 3                          # Number of documents to retrieve
+  enable_query_rewriting: true       # Use LLM to improve queries
+  enable_reranking: true             # Cross-encoder reranking (disable for small corpora)
+  reranker_model: BAAI/bge-reranker-base  # Reranker model
 
 # Interactive mode
 interactive:
-  prompt: 'ragnar> '            # Command prompt
-  quiet_mode: true              # Suppress verbose output
+  prompt: 'ragnar> '
+  quiet_mode: true
 
 # Output settings
 output:
-  show_progress: true           # Show progress bars during indexing
+  show_progress: true
 ```
+
+### LLM Profiles
+
+Profiles let you switch between LLM providers without editing config. Use local models for development and cloud models for production quality:
+
+```bash
+# Use a specific profile for a single command
+ragnar --profile opus query "What is our security policy?"
+
+# In TUI mode, switch profiles mid-session
+ragnar> /profile           # List available profiles
+ragnar> /profile opus      # Switch to Opus
+ragnar> /profile red_candle  # Switch back to local
+```
+
+Ragnar supports any [RubyLLM](https://rubyllm.com/) provider: `red_candle` (local), `anthropic`, `openai`, `ollama`, and more. API keys can be set per-profile in the config or via environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.).
 
 ### Viewing Configuration
 
-Check current configuration:
 ```bash
-# Show all configuration settings
-ragnar config
-
-# Show LLM model information
-ragnar model
+ragnar config     # Show all settings including active profile
+ragnar model      # Show LLM model information
+ragnar profile    # List all LLM profiles
 ```
 
 In interactive mode (launch with `ragnar`):
-```bash
+```
 ragnar> /config    # Show configuration
-ragnar> /model     # Show model details
+ragnar> /profile   # List profiles
 ```
 
 ### Environment Variables
 
 Configuration values can be overridden with environment variables:
 - `XDG_CACHE_HOME` - Override default cache directory (~/.cache)
+- `ANTHROPIC_API_KEY` - Anthropic API key (used by anthropic profiles)
+- `OPENAI_API_KEY` - OpenAI API key (used by openai profiles)
 
 ### Supported Models
+
+**LLM Providers** (via RubyLLM):
+- `red_candle` — Local GGUF models (default): `MaziyarPanahi/Qwen3-4B-GGUF`, `MaziyarPanahi/Qwen3-8B-GGUF`
+- `anthropic` — Claude models: `claude-opus-4-6`, `claude-sonnet-4-6`
+- `openai` — GPT models: `gpt-4o`, `gpt-4o-mini`
+- `ollama` — Local Ollama models: `llama3.1:8b`, `mistral:7b`
+- Any other [RubyLLM provider](https://rubyllm.com/providers/)
 
 **Embedding Models** (via red-candle):
 - `jinaai/jina-embeddings-v2-base-en` (default, 768 dimensions)
 - `BAAI/bge-base-en-v1.5`
 - `sentence-transformers/all-MiniLM-L6-v2`
 
-**LLM Models** (via red-candle, GGUF format):
-- `TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF` (default, fast)
-- `TheBloke/Qwen2.5-1.5B-Instruct-GGUF`
-- `TheBloke/phi-2-GGUF`
-
-**Reranker Models** (via red-candle):
-- `BAAI/bge-reranker-base`
-- `cross-encoder/ms-marco-MiniLM-L-6-v2`
+**Reranker Models** (via red-candle, configurable):
+- `BAAI/bge-reranker-base` (default, XLM-RoBERTa)
+- `cross-encoder/ms-marco-MiniLM-L-12-v2` (smaller, BERT-based)
 
 ## Advanced Usage
 

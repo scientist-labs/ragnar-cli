@@ -16,7 +16,7 @@ module Ragnar
       @reranker = nil # Will initialize when needed
     end
     
-    def query(user_query, top_k: 3, verbose: false, enable_rewriting: true)
+    def query(user_query, top_k: 3, verbose: false, enable_rewriting: true, enable_reranking: false)
       puts "Processing query: #{user_query}" if verbose
       
       # Step 1: Rewrite and analyze the query (if enabled)
@@ -26,7 +26,15 @@ module Ragnar
         puts "-"*60 if verbose
         
         rewritten = @rewriter.rewrite(user_query)
-        
+
+        # Always include the original query in sub-queries to ensure direct matches
+        # are found regardless of how the rewriter reformulates
+        sub_queries = rewritten['sub_queries'] || []
+        unless sub_queries.include?(user_query)
+          sub_queries.unshift(user_query)
+        end
+        rewritten['sub_queries'] = sub_queries
+
         if verbose
           puts "\nOriginal Query: #{user_query}"
           puts "\nRewritten Query Analysis:"
@@ -95,18 +103,25 @@ module Ragnar
         puts "-"*60
       end
       
-      reranked = rerank_documents(
-        query: rewritten['clarified_intent'],
-        documents: candidates,
-        top_k: top_k * 2  # Get more than we need for context
-      )
-      
+      if enable_reranking
+        reranked = rerank_documents(
+          query: user_query,
+          documents: candidates,
+          top_k: top_k * 2
+        )
+      else
+        # Use retrieval order (RRF scores) directly — often more reliable than
+        # small cross-encoder rerankers on domain-specific corpora
+        reranked = candidates
+      end
+
       if verbose && reranked.any?
-        puts "\nTop Reranked Documents:"
+        puts "\nTop #{enable_reranking ? 'Reranked' : 'Retrieved'} Documents:"
         reranked[0..2].each_with_index do |doc, idx|
           full_text = (doc[:chunk_text] || doc[:text] || "").gsub(/\s+/, ' ')
           puts "  #{idx + 1}. [#{File.basename(doc[:file_path] || 'unknown')}]"
           puts "     Score: #{doc[:score]&.round(4) if doc[:score]}"
+          puts "     Distance: #{doc[:distance]&.round(4) if doc[:distance]}"
           puts "     Full chunk (#{full_text.length} chars):"
           puts "     \"#{full_text}\""
           puts ""
@@ -174,12 +189,12 @@ module Ragnar
         query: user_query,
         clarified: rewritten['clarified_intent'],
         answer: response,
-        sources: context_docs.map { |d| 
+        sources: context_docs.map { |d|
           {
-            source_file: d[:file_path] || d[:source_file],
-            chunk_index: d[:chunk_index]
+            source_file: d[:file_path] || d[:source_file] || d["file_path"],
+            chunk_index: d[:chunk_index] || d["chunk_index"]
           }
-        },
+        }.reject { |s| s[:source_file].nil? },
         sub_queries: rewritten['sub_queries'],
         confidence: calculate_confidence(reranked[0...top_k])
       }
@@ -260,22 +275,43 @@ module Ragnar
           k: k,
           use_reduced: use_reduced
         )
-        
+
         if verbose
-          puts "  Found #{vector_results.length} matches"
+          puts "  Vector search: #{vector_results.length} matches"
           if vector_results.any?
             best = vector_results.first
-            puts "  Best match: [#{File.basename(best[:file_path] || 'unknown')}] (distance: #{best[:distance]&.round(3)})"
+            puts "  Best vector match: [#{File.basename(best[:file_path] || 'unknown')}] (distance: #{best[:distance]&.round(3)})"
           end
         end
-        
+
         # Add query index for RRF
         vector_results.each do |result|
           result[:query_idx] = idx
           result[:retrieval_method] = :vector
         end
-        
+
         all_results.concat(vector_results)
+
+        # Full-text search for keyword matching (hybrid search)
+        begin
+          fts_results = @database.full_text_search(query, limit: k)
+          if verbose && fts_results.any?
+            puts "  FTS: #{fts_results.length} matches"
+            best_fts = fts_results.first
+            puts "  Best FTS match: [#{File.basename(best_fts[:file_path] || 'unknown')}]"
+          end
+
+          fts_results.each_with_index do |result, rank|
+            # Synthesize a distance from FTS rank (lower rank = better match)
+            result[:distance] = 0.1 + (rank * 0.05)
+            result[:query_idx] = idx
+            result[:retrieval_method] = :fts
+          end
+
+          all_results.concat(fts_results)
+        rescue => e
+          puts "  FTS unavailable: #{e.message}" if verbose
+        end
       end
       
       if verbose
@@ -299,10 +335,18 @@ module Ragnar
       
       results.each do |result|
         doc_id = result[:id]
-        doc_scores[doc_id] ||= {
-          score: 0.0,
-          document: result
-        }
+        if doc_scores[doc_id]
+          # Prefer the document with more complete metadata
+          existing = doc_scores[doc_id][:document]
+          if result[:file_path] && !existing[:file_path]
+            doc_scores[doc_id][:document] = result
+          end
+        else
+          doc_scores[doc_id] = {
+            score: 0.0,
+            document: result
+          }
+        end
         
         # RRF formula: 1 / (k + rank)
         # Using distance as a proxy for rank (lower distance = better rank)
@@ -337,14 +381,14 @@ module Ragnar
       
       # Initialize reranker if not already done
       @reranker ||= Candle::Reranker.from_pretrained(
-        "cross-encoder/ms-marco-MiniLM-L-12-v2"
+        Config.instance.reranker_model
       )
       
       # Prepare document texts - use chunk_text field
       texts = unique_docs.map { |doc| doc[:chunk_text] || doc[:text] || "" }
       
-      # Rerank - returns array of {doc_id:, score:, text:}
-      reranked = @reranker.rerank(query, texts)
+      # Rerank - use raw logits (no sigmoid) for better score separation
+      reranked = @reranker.rerank(query, texts, apply_sigmoid: false)
       
       # Map back to original documents with scores
       reranked.map do |result|
@@ -361,46 +405,37 @@ module Ragnar
       # In the future, we could fetch neighboring chunks for more context
       context_size = case context_needed
                      when "extensive" then 5
-                     when "moderate" then 3
-                     else 2
+                     when "moderate" then 4
+                     else 3
                      end
       
       documents.first(context_size)
     end
     
     def generate_response(query:, repacked_context:, query_type:)
-      # Get cached LLM from manager
-      llm = @llm_manager.default_llm
-      
-      # Create prompt with repacked context
-      prompt = build_prompt(query, repacked_context, query_type)
-      
-      # Generate response using default config
-      llm.generate(prompt)
+      # Create a fresh chat for each query to avoid conversation history bleed
+      chat = Config.instance.create_chat
+      chat.with_instructions(
+        "You are a helpful assistant. Answer questions based ONLY on the provided context. " \
+        "If the answer is not in the context, say \"I don't have enough information to answer that question.\" " \
+        "Be concise and direct. /no_think"
+      )
+
+      prompt = "Context:\n#{repacked_context}\n\nQuestion: #{query}"
+      response = chat.ask(prompt).content
+      # Strip <think>...</think> blocks that some models (e.g. Qwen3) include
+      strip_think_tags(response)
     rescue => e
       # Fallback to returning the repacked context
       puts "Warning: LLM generation failed (#{e.message})"
       "Based on the retrieved information:\n\n#{repacked_context[0..500]}..."
     end
     
-    def build_prompt(query, context, query_type)
-      base_prompt = <<~PROMPT
-        <|system|>
-        You are a helpful assistant. Answer questions based ONLY on the provided context.
-        If the answer is not in the context, say "I don't have enough information to answer that question."
-        </s>
-        <|user|>
-        Context:
-        #{context}
-        
-        Question: #{query}
-        </s>
-        <|assistant|>
-      PROMPT
-      
-      base_prompt
+    def strip_think_tags(text)
+      return text unless text
+      text.gsub(/<think>.*?<\/think>/m, '').strip
     end
-    
+
     def calculate_confidence(documents)
       return 0.0 if documents.empty?
       
