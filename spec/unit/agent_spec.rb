@@ -18,7 +18,7 @@ RSpec.describe Ragnar::Agent do
     it "creates a chat with tools registered" do
       agent = described_class.new
       expect(mock_chat).to have_received(:with_instructions)
-      expect(mock_chat).to have_received(:with_tool).at_least(6).times
+      expect(mock_chat).to have_received(:with_tool).at_least(9).times
     end
 
     it "accepts a profile option" do

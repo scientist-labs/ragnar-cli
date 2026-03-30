@@ -25,19 +25,14 @@ module Ragnar
       allow_nested: false,
       history_file: Config.instance.history_file,
       ui_mode: :tui,
+      # Route all natural language input through the unified Agent.
+      # The Agent decides whether to use SearchDocs (RAG), coding tools, or both.
       default_handler: proc do |input, thor_instance|
-        puts "[DEBUG] Default handler called: #{input}" if ENV["DEBUG"]
-
         begin
-          # IMPORTANT: Use direct method call, NOT invoke(), to avoid Thor's
-          # silent deduplication that prevents repeated calls to the same method
-          result = thor_instance.query(input.strip)
-          puts "[DEBUG] Default handler completed" if ENV["DEBUG"]
-          result
+          thor_instance.send(:unified_ask, input.strip)
         rescue => e
-          puts "[DEBUG] Default handler error: #{e.message}" if ENV["DEBUG"]
-          puts "[DEBUG] Backtrace: #{e.backtrace.first(3)}" if ENV["DEBUG"]
-          raise e
+          thor_instance.say "Error: #{e.message}", :red
+          thor_instance.say e.backtrace.first(3).join("\n") if ENV["DEBUG"]
         end
       end
     )
@@ -49,6 +44,8 @@ module Ragnar
     class_variable_set(:@@cached_query_processor, nil)
     class_variable_set(:@@cached_db_path, nil)
     class_variable_set(:@@verbose_mode, false)
+    class_variable_set(:@@cached_agent, nil)
+    class_variable_set(:@@cached_orchestrator, nil)
 
     desc "index PATH", "Index text files from PATH (file or directory)"
     option :db_path, type: :string, desc: "Path to Lance database (default from config)"
@@ -442,6 +439,8 @@ module Ragnar
         begin
           config.set_active_profile(name)
           LLMManager.instance.clear_cache
+          @@cached_agent = nil
+          @@cached_orchestrator = nil
           say "Switched to profile: #{name}", :green
           say "  Provider: #{config.llm_provider}"
           say "  Model: #{config.llm_model}"
@@ -688,6 +687,36 @@ module Ragnar
     end
 
     private
+
+    def unified_ask(input)
+      @@cached_agent ||= begin
+        a = Agent.new(profile: options[:profile])
+        a.on_tool_call do |tool_call|
+          say "  -> #{tool_call.name}(#{format_tool_args(tool_call.arguments)})", :cyan
+        end
+        a
+      end
+
+      @@cached_orchestrator ||= Orchestrator.new(
+        agent: @@cached_agent,
+        working_dir: Dir.pwd,
+        max_iterations: 20
+      )
+
+      @@cached_orchestrator.run(input) do |event|
+        case event[:type]
+        when :response
+          say "\n#{event[:content]}\n" if event[:content] && !event[:content].empty?
+        when :status
+          say event[:message], :yellow
+        when :validation
+          say "Running: #{event[:command]}", :yellow
+        when :ask_user
+          say event[:message], :yellow
+          ask("  > ")
+        end
+      end
+    end
 
     def apply_profile!
       return unless options[:profile]
