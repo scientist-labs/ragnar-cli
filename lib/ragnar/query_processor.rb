@@ -16,6 +16,39 @@ module Ragnar
       @reranker = nil # Will initialize when needed
     end
     
+    # Retrieve context without generating a response. Runs steps 1-5 of the
+    # RAG pipeline (rewrite, retrieve, rerank, prepare, repack) and returns
+    # the repacked context, sources, and confidence. Used by SearchDocs tool
+    # so the Agent LLM can synthesize its own answer.
+    def retrieve_context(user_query, top_k: 3, enable_rewriting: true, enable_reranking: false)
+      rewritten = build_rewritten_query(user_query, enable_rewriting: enable_rewriting)
+      candidates = retrieve_with_rrf(rewritten['sub_queries'], k: 20, verbose: false)
+
+      return { context: "", sources: [], confidence: 0.0, clarified: user_query } if candidates.empty?
+
+      if enable_reranking
+        reranked = rerank_documents(query: user_query, documents: candidates, top_k: top_k * 2)
+      else
+        reranked = candidates
+      end
+
+      context_docs = prepare_context(reranked[0...top_k], rewritten['context_needed'])
+      repacked = ContextRepacker.repack(context_docs, rewritten['clarified_intent'])
+      confidence = calculate_confidence(context_docs)
+
+      {
+        context: repacked,
+        sources: context_docs.map { |d|
+          {
+            source_file: d[:file_path] || d[:source_file] || d["file_path"],
+            chunk_index: d[:chunk_index] || d["chunk_index"]
+          }
+        }.reject { |s| s[:source_file].nil? },
+        confidence: confidence,
+        clarified: rewritten['clarified_intent']
+      }
+    end
+
     def query(user_query, top_k: 3, verbose: false, enable_rewriting: true, enable_reranking: false)
       puts "Processing query: #{user_query}" if verbose
       
@@ -434,6 +467,26 @@ module Ragnar
     def strip_think_tags(text)
       return text unless text
       text.gsub(/<think>.*?<\/think>/m, '').strip
+    end
+
+    def build_rewritten_query(user_query, enable_rewriting: true)
+      if enable_rewriting
+        rewritten = @rewriter.rewrite(user_query)
+        sub_queries = rewritten['sub_queries'] || []
+        unless sub_queries.include?(user_query)
+          sub_queries.unshift(user_query)
+        end
+        rewritten['sub_queries'] = sub_queries
+        rewritten
+      else
+        {
+          'clarified_intent' => user_query,
+          'query_type' => 'direct',
+          'context_needed' => 'general',
+          'sub_queries' => [user_query],
+          'key_terms' => []
+        }
+      end
     end
 
     def calculate_confidence(documents)

@@ -6,8 +6,10 @@ require_relative "tools/edit_file"
 require_relative "tools/bash_exec"
 require_relative "tools/list_files"
 require_relative "tools/grep"
+require_relative "tools/search_docs"
 require_relative "tools/task_complete"
 require_relative "tools/ask_user"
+require_relative "tools/lite"
 
 module Ragnar
   module Tools
@@ -24,6 +26,7 @@ module Ragnar
       Tools::BashExec,
       Tools::ListFiles,
       Tools::Grep,
+      Tools::SearchDocs,
       Tools::TaskComplete,
       Tools::AskUser
     ].freeze
