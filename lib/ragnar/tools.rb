@@ -9,6 +9,7 @@ require_relative "tools/grep"
 require_relative "tools/search_docs"
 require_relative "tools/task_complete"
 require_relative "tools/ask_user"
+require_relative "tools/lite"
 
 module Ragnar
   module Tools

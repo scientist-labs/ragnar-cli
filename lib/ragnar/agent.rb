@@ -37,6 +37,7 @@ module Ragnar
       - When finished, ALWAYS call task_complete with a summary
       - If you need clarification, call ask_user
       - Be concise and direct
+      /no_think
     PROMPT
 
     def initialize(profile: nil)
@@ -107,8 +108,21 @@ module Ragnar
     private
 
     def register_tools
-      Ragnar::Tools::ALL.each do |tool_class|
+      tools = select_tool_set
+      tools.each do |tool_class|
         @chat.with_tool(tool_class.new)
+      end
+    end
+
+    # Local models (red_candle) get overwhelmed by many tools with long
+    # descriptions — Qwen3-8B outputs only <think> blocks with 9 tools.
+    # Cloud models (Anthropic, OpenAI) handle the full set fine.
+    def select_tool_set
+      provider = Config.instance.llm_provider
+      if provider == 'red_candle'
+        Ragnar::Tools::LITE
+      else
+        Ragnar::Tools::ALL
       end
     end
 
