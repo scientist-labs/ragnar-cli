@@ -12,28 +12,24 @@ jobs:
         with:
           toolchain: stable
 
-      # Install protobuf compiler (needed for lancelot)
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
+      # Cache Rust compilation artifacts
       - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            tmp
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # Install protobuf compiler (needed for lancelot)
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ruby
-          bundler-cache: false  # Disable auto caching, we'll do it manually
-
-      - name: Install dependencies
-        run: |
-          gem install bundler
-          bundle install --jobs 4 --retry 3
+          bundler-cache: true  # Caches gems including compiled native extensions
 
       - name: Run specs
-        run: |
-          bundle exec rake spec
+        run: bundle exec rake spec

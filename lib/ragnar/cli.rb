@@ -10,7 +10,12 @@ module Ragnar
     include CLIVisualization
     include Thor::Interactive::Command
 
-    default_command :interactive
+    def self.exit_on_failure?
+      true
+    end
+
+    # Note: default to interactive mode is handled in exe/ragnar
+    # to avoid Thor's default_command conflicting with global options
 
     class_option :profile, type: :string, aliases: "-p", desc: "LLM profile to use (e.g., red_candle, opus, sonnet)"
 
@@ -455,6 +460,42 @@ module Ragnar
       end
     end
 
+    desc "code TASK", "Run an agentic coding task (reads, writes, and runs commands)"
+    option :max_iterations, type: :numeric, default: 20, desc: "Maximum orchestrator iterations"
+    def code(task)
+      apply_profile!
+
+      agent = Agent.new(profile: options[:profile])
+
+      # Display tool calls in real time
+      agent.on_tool_call do |tool_call|
+        say "  -> #{tool_call.name}(#{format_tool_args(tool_call.arguments)})", :cyan
+      end
+
+      orchestrator = Orchestrator.new(
+        agent: agent,
+        working_dir: Dir.pwd,
+        max_iterations: options[:max_iterations]
+      )
+
+      orchestrator.run(task) do |event|
+        case event[:type]
+        when :response
+          say "\n#{event[:content]}\n" if event[:content] && !event[:content].empty?
+        when :status
+          say event[:message], :yellow
+        when :validation
+          say "Running: #{event[:command]}", :yellow
+        when :ask_user
+          say event[:message], :yellow
+          ask("  > ")
+        end
+      end
+    rescue => e
+      say "Agent error: #{e.message}", :red
+      say e.backtrace.first(3).join("\n") if ENV['DEBUG']
+    end
+
     desc "verbose", "Toggle verbose mode on/off"
     def verbose
       @@verbose_mode = !@@verbose_mode
@@ -652,6 +693,15 @@ module Ragnar
       return unless options[:profile]
       Config.instance.set_active_profile(options[:profile])
       LLMManager.instance.clear_cache
+    end
+
+    def format_tool_args(args)
+      return "" unless args
+      args.map { |k, v|
+        val = v.to_s
+        val = val[0..50] + "..." if val.length > 50
+        "#{k}: #{val}"
+      }.join(", ")
     end
 
     # Cached instance helpers for interactive mode
