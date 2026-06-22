@@ -7,6 +7,6 @@ gemspec
 gem "thor-interactive", "0.1.1"
 gem "ratatui_ruby", "~> 1.4"
 
-gem "clusterkit", "0.2.6"
+gem "clusterkit", "0.3.1"
 
 gem "ruby_llm-red_candle", "~> 0.2"
