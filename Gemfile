@@ -4,7 +4,7 @@ source "https://rubygems.org"
 
 gemspec
 
-gem "thor-interactive", "0.1.0"
+gem "thor-interactive", "0.1.1"
 gem "ratatui_ruby", "~> 1.4"
 
 gem "clusterkit", "0.2.6"
